@@ -102,6 +102,9 @@ class VersionManager:
     def import_strategy_class(strategy_type: str, version: str) -> type:
         """动态导入策略类
 
+        优先从 PluginRegistry 查找（已由 discover_builtin 自动注册）；
+        未命中再走 importlib 动态导入（用于尚未被发现的迭代版本）。
+
         Args:
             strategy_type: 策略类型（ycj/dh）
             version: 版本号（v1/v2/v2.1）
@@ -113,6 +116,15 @@ class VersionManager:
             ModuleNotFoundError: 模块不存在
             AttributeError: 策略类不存在
         """
+        # 优先走 PluginRegistry（discover_builtin 已注册所有 strategies/ 下策略）
+        from ..core.plugin_system import PluginRegistry, PluginType
+
+        plugin_name = f"{strategy_type}_{version}"
+        try:
+            return PluginRegistry.get(PluginType.STRATEGY, plugin_name)
+        except Exception:
+            pass  # 未注册（如迭代版本尚未被发现），回退到动态导入
+
         module_path = VersionManager.get_module_path(strategy_type, version)
 
         try:

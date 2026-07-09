@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import enum
+import importlib
 from dataclasses import dataclass, field
 from typing import Any, Callable, ClassVar
 
@@ -64,6 +65,23 @@ class PluginRegistry:
 
     _registries: ClassVar[dict[PluginType, dict[str, tuple[type, PluginMeta]]]] = {}
     _discovered: ClassVar[bool] = False
+    _builtin_discovered: ClassVar[bool] = False
+
+    # 内置插件包清单：discover_builtin 会导入这些包，各包 __init__ 再自扫描子模块
+    _BUILTIN_PLUGIN_PACKAGES: ClassVar[tuple[str, ...]] = (
+        "ohmyquant.data.sources",
+        "ohmyquant.factors.builtin",
+        "ohmyquant.engine.selectors",
+        "ohmyquant.engine.allocators",
+        "ohmyquant.engine.risk_managers",
+        "ohmyquant.execution.cost_model",
+        "ohmyquant.execution.scheduler",
+        "ohmyquant.execution.rebalancer",
+        "ohmyquant.models.ml",
+        "ohmyquant.models.dl",
+        "ohmyquant.models.rl",
+        "ohmyquant.strategy.strategies",
+    )
 
     @classmethod
     def register(
@@ -98,6 +116,7 @@ class PluginRegistry:
     @classmethod
     def get(cls, plugin_type: PluginType, name: str) -> type:
         """获取插件类（不实例化）"""
+        cls.discover_builtin()
         registry = cls._registries.get(plugin_type, {})
         if name not in registry:
             available = list(registry.keys())
@@ -155,6 +174,7 @@ class PluginRegistry:
             plugin_type: 插件类型
             category: 可选类别过滤
         """
+        cls.discover_builtin()
         registry = cls._registries.get(plugin_type, {})
         if category is None:
             return list(registry.keys())
@@ -167,6 +187,7 @@ class PluginRegistry:
     @classmethod
     def list_all(cls) -> dict[str, list[str]]:
         """列出所有插件"""
+        cls.discover_builtin()
         return {
             pt.value: list(reg.keys())
             for pt, reg in cls._registries.items()
@@ -216,6 +237,27 @@ class PluginRegistry:
                 logger.info(f"加载外部插件: {ep.name} from {ep.value}")
             except Exception as e:
                 logger.warning(f"加载外部插件失败 {ep.name}: {e}")
+
+    @classmethod
+    def discover_builtin(cls) -> None:
+        """发现并注册所有内置插件包。幂等。
+
+        逐个导入 _BUILTIN_PLUGIN_PACKAGES 中的包；各包的 __init__.py 会调用
+        discover_modules(__name__) 自扫描子模块，触发 @register_* 装饰器。
+        新增内置插件只需把 .py 放进对应包，无需修改任何 __init__.py。
+        """
+        if cls._builtin_discovered:
+            return
+        cls._builtin_discovered = True
+        from .discovery import discover_modules
+
+        for pkg in cls._BUILTIN_PLUGIN_PACKAGES:
+            try:
+                # 导入包本身（触发其 __init__ 的自扫描）；对单模块包用 discover_modules
+                importlib.import_module(pkg)
+            except ImportError:
+                # 某些包可能是单模块而非包，回退到 discover_modules
+                discover_modules(pkg.rsplit(".", 1)[0]) if "." in pkg else None
 
 
 # ---------------------------------------------------------------------------

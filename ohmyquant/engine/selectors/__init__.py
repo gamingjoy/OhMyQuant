@@ -1,4 +1,8 @@
-"""选股器实现"""
+"""选股器实现
+
+自动发现本目录下所有选股器模块。新增选股器：新建 .py + @register_selector，无需修改本文件。
+下方显式导入仅用于向后兼容 re-export（engine/__init__ 仍按名引用已知类）。
+"""
 from .hybrid_selector import AdaptiveICIRSelector, HybridSelector
 from .icir_selector import ICIRSelector
 from .momentum_selector import MomentumSelector
@@ -17,6 +21,10 @@ try:
     from .rl_selector import RLSelector
 except ImportError:
     RLSelector = None  # type: ignore
+
+from ...core.discovery import discover_modules
+
+discover_modules(__name__)
 
 
 def create_selector(config: dict | None = None):

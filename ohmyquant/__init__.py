@@ -32,30 +32,12 @@ from .core import (
 
 
 def _load_builtin_plugins() -> None:
-    """延迟导入内置插件模块，触发装饰器注册"""
-    import importlib
+    """发现并注册所有内置插件包（零配置热插拔）。
 
-    modules = [
-        "ohmyquant.data.sources.duckdb_source",
-        "ohmyquant.data.sources.csv_source",
-        "ohmyquant.factors.builtin",
-        "ohmyquant.engine.selectors",
-        "ohmyquant.engine.allocators",
-        "ohmyquant.engine.risk_managers",
-        "ohmyquant.execution.cost_model",
-        "ohmyquant.execution.scheduler",
-        "ohmyquant.execution.rebalancer",
-        "ohmyquant.models.ml.lightgbm_model",
-        "ohmyquant.models.dl.lstm_model",
-        "ohmyquant.models.dl.mlp_model",
-        "ohmyquant.models.rl.portfolio_rl",
-        "ohmyquant.strategy.strategies",
-    ]
-    for mod_path in modules:
-        try:
-            importlib.import_module(mod_path)
-        except ImportError:
-            pass
+    各插件包的 __init__.py 调用 discover_modules(__name__) 自扫描子模块，
+    新增插件只需把 .py 放进对应包即可被自动注册。
+    """
+    PluginRegistry.discover_builtin()
 
 
 _load_builtin_plugins()

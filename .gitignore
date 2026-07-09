@@ -35,7 +35,7 @@ coverage.xml
 Thumbs.db
 
 # Project data (download_a_share 等外部数据不纳入版本控制)
-data/
+/data/
 *.duckdb
 *.duckdb.wal
 *.parquet

@@ -63,32 +63,34 @@ class StrategyRunner:
 
         self.data_catalog: DataCatalog | None = None
         self.backtest_engine: BacktestEngine | None = None
-        self.tracker: ExperimentTracker | None = None
+        self.tracker: Any = None
 
     def _create_data_catalog(self) -> DataCatalog:
         """创建数据目录
 
-        根据配置选择数据源：duckdb / local_parquet / jqdata / csv
+        通过 PluginRegistry 按名创建数据源（热插拔：任意已注册数据源均可配置使用），
+        未注册或创建失败时回退到 duckdb。
 
         Returns:
             DataCatalog: 数据目录实例
         """
+        from ..core.plugin_system import PluginRegistry, PluginType
+        from ..core.exceptions import PluginNotFoundError
+
         data_source_name = self.config.data.source
         data_root = self.config.data.data_root
 
-        source_map = {
-            "duckdb": DuckDBSource,
-            "local_parquet": LocalParquetSource,
-            "jqdata": JQDataSource,
-            "csv": CSVSource,
-        }
-
-        if data_source_name not in source_map:
+        try:
+            source = PluginRegistry.create(
+                PluginType.DATA_SOURCE,
+                data_source_name,
+                config={"data_root": data_root},
+            )
+        except PluginNotFoundError:
             logger.warning(f"未知数据源: {data_source_name}，使用 duckdb")
-            data_source_name = "duckdb"
-
-        source_class = source_map[data_source_name]
-        source = source_class(config={"data_root": data_root})
+            source = PluginRegistry.create(
+                PluginType.DATA_SOURCE, "duckdb", config={"data_root": data_root}
+            )
         return DataCatalog(source)
 
     def _create_backtest_engine(self) -> BacktestEngine:

@@ -1,8 +1,16 @@
-"""风控管理器实现"""
+"""风控管理器实现
+
+自动发现本目录下所有风控模块。新增风控器：新建 .py + @register_risk_manager，无需修改本文件。
+下方显式导入仅用于向后兼容 re-export。
+"""
 from .cvar_manager import CVaRRiskManager
 from .drawdown_defense import DrawdownDefenseRiskManager
 from .regime_adaptive import RegimeAdaptiveRiskManager
 from .vol_target import VolTargetRiskManager
+
+from ...core.discovery import discover_modules
+
+discover_modules(__name__)
 
 
 def create_risk_manager(config: dict | None = None):

@@ -27,32 +27,9 @@ from .features import (
 )
 from .walk_forward import WalkForwardRunner
 
-
-def _register_builtin_models() -> None:
-    """注册内置模型（延迟导入避免依赖问题）"""
-    try:
-        from .ml.lightgbm_model import LightGBMModel  # noqa: F401
-    except ImportError:
-        pass
-    try:
-        from .ml.xgboost_model import XGBoostModel  # noqa: F401
-    except ImportError:
-        pass
-    try:
-        from .dl.mlp_model import MLPModel  # noqa: F401
-    except ImportError:
-        pass
-    try:
-        from .dl.lstm_model import LSTMModel  # noqa: F401
-    except ImportError:
-        pass
-    try:
-        from .rl.portfolio_rl import PortfolioRLModel  # noqa: F401
-    except ImportError:
-        pass
-
-
-_register_builtin_models()
+# 导入模型子包以触发自动发现（各子包 __init__ 调用 discover_modules 自扫描）
+# 新增模型：在 ml/dl/rl 对应目录下新建 .py + @register_model，无需修改本文件
+from . import dl, ml, rl  # noqa: F401
 
 
 __all__ = [
