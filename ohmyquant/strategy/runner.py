@@ -105,6 +105,38 @@ class StrategyRunner:
         flat_config = self.config.to_flat_dict()
         return BacktestEngine(self.data_catalog, flat_config)
 
+    def _resolve_pools(self) -> dict[str, list[str]]:
+        """解析股票池配置，支持动态池（基于指数成分股）
+
+        配置格式：
+          静态池:  pools: {main: ["600519.SH", "601318.SH"]}
+          动态池:  pools: {main: {index: "000300.XSHG"}}
+          默认:    无 pools 配置时使用 CSI 300
+        """
+        raw_pools = self.config.pools
+        if not raw_pools:
+            raw_pools = {"main": {"index": "000300.XSHG"}}
+
+        resolved: dict[str, list[str]] = {}
+        for name, definition in raw_pools.items():
+            if isinstance(definition, list):
+                resolved[name] = definition
+            elif isinstance(definition, dict) and "index" in definition:
+                index_code = definition["index"]
+                codes = self.data_catalog.get_index_constituents(index_code)
+                if not codes:
+                    logger.warning(f"池 {name} 指数成分股加载失败: {index_code}，使用空池")
+                    codes = []
+                else:
+                    logger.info(f"池 {name} 动态加载 {index_code}: {len(codes)} 只股票")
+                resolved[name] = codes
+            elif isinstance(definition, dict) and "stocks" in definition:
+                resolved[name] = definition["stocks"]
+            else:
+                resolved[name] = []
+
+        return resolved
+
     def run(self) -> StrategyResult:
         """执行策略
 
@@ -122,8 +154,8 @@ class StrategyRunner:
         # 创建回测引擎
         self.backtest_engine = self._create_backtest_engine()
 
-        # 获取股票池配置
-        pools = self.config.pools or {"main": []}
+        # 获取股票池配置（支持动态池：pools: {main: {index: "000300.XSHG"}}）
+        pools = self._resolve_pools()
 
         # 执行回测
         bt_start = self.config.backtest.start_date

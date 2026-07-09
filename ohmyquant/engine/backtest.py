@@ -361,8 +361,13 @@ class BacktestEngine(BaseEngine):
         for pool_name, ic_df in pool_ic_df.items():
             try:
                 strong = self.selector.select_strong_factors(ic_df, self.train_end)
-                pool_strong[pool_name] = strong
-                logger.info(f"池 {pool_name} 强因子: {strong}")
+                if not strong:
+                    factor_cols = [c for c in ic_df.columns if c != "date"]
+                    logger.warning(f"池 {pool_name} 无强因子通过阈值，使用全部 {len(factor_cols)} 个因子")
+                    pool_strong[pool_name] = factor_cols
+                else:
+                    pool_strong[pool_name] = strong
+                    logger.info(f"池 {pool_name} 强因子: {strong}")
             except Exception as e:
                 logger.warning(f"池 {pool_name} 强因子筛选失败: {e}")
                 # 退化为使用所有因子

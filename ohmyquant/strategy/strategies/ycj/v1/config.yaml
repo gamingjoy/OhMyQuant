@@ -33,6 +33,10 @@ factors:
   - mom_3m
   - mom_6m
 
+pools:
+  main:
+    index: "000300.XSHG"
+
 data:
   source: duckdb
   data_root: "D:/Work/Project/download_a_share/data"

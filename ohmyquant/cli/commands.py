@@ -22,6 +22,21 @@ from ..strategy.runner import StrategyRunner
 from ..strategy.version_manager import VersionManager
 
 
+def _json_safe(obj):
+    """将 numpy 类型转为 JSON 可序列化的 Python 原生类型"""
+    if isinstance(obj, dict):
+        return {k: _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_json_safe(v) for v in obj]
+    if isinstance(obj, (np.integer,)):
+        return int(obj)
+    if isinstance(obj, (np.floating,)):
+        return float(obj)
+    if isinstance(obj, np.ndarray):
+        return [_json_safe(v) for v in obj.tolist()]
+    return obj
+
+
 def run_command(args) -> None:
     """运行策略"""
     print(f"运行策略: {args.strategy_type} v{args.version}")
@@ -46,8 +61,8 @@ def run_command(args) -> None:
         result_dict = {
             "strategy_type": args.strategy_type,
             "version": args.version,
-            "metrics": metrics.__dict__ if 'metrics' in dir() else {},
-            "daily_returns": returns.tolist() if hasattr(returns, "tolist") else list(returns),
+            "metrics": _json_safe(metrics.__dict__) if 'metrics' in dir() else {},
+            "daily_returns": _json_safe(returns.tolist() if hasattr(returns, "tolist") else list(returns)),
         }
         with open(os.path.join(output_dir, "results.json"), "w", encoding="utf-8") as f:
             json.dump(result_dict, f, indent=2, ensure_ascii=False)
@@ -92,8 +107,8 @@ def backtest_command(args) -> None:
             json.dump({
                 "strategy": args.strategy,
                 "version": args.version,
-                "metrics": metrics.__dict__,
-                "daily_returns": returns.tolist() if hasattr(returns, "tolist") else list(returns),
+                "metrics": _json_safe(metrics.__dict__),
+                "daily_returns": _json_safe(returns.tolist() if hasattr(returns, "tolist") else list(returns)),
             }, f, indent=2, ensure_ascii=False)
 
         print(f"\n回测完成")
