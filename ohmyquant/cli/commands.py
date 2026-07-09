@@ -47,6 +47,7 @@ def run_command(args) -> None:
             "strategy_type": args.strategy_type,
             "version": args.version,
             "metrics": metrics.__dict__ if 'metrics' in dir() else {},
+            "daily_returns": returns.tolist() if hasattr(returns, "tolist") else list(returns),
         }
         with open(os.path.join(output_dir, "results.json"), "w", encoding="utf-8") as f:
             json.dump(result_dict, f, indent=2, ensure_ascii=False)
@@ -92,6 +93,7 @@ def backtest_command(args) -> None:
                 "strategy": args.strategy,
                 "version": args.version,
                 "metrics": metrics.__dict__,
+                "daily_returns": returns.tolist() if hasattr(returns, "tolist") else list(returns),
             }, f, indent=2, ensure_ascii=False)
 
         print(f"\n回测完成")
@@ -148,21 +150,41 @@ def analyze_command(args) -> None:
 
 
 def list_command(args) -> None:
-    """列出策略/因子"""
+    """列出已注册插件"""
+    from ..core.plugin_system import PluginRegistry, PluginType
+
+    PluginRegistry.discover_builtin()
+
     if args.type == "strategies":
         print("可用策略:")
         strategies = VersionManager.list_strategy_types()
         for strategy_type in strategies:
             versions = VersionManager.list_versions(strategy_type)
             print(f"  {strategy_type}: {', '.join(versions)}")
+        return
 
-    elif args.type == "factors":
-        print("可用因子:")
-        print("  alpha1, alpha5, alpha101")
+    type_map = {
+        "factors": PluginType.FACTOR,
+        "selectors": PluginType.SELECTOR,
+        "allocators": PluginType.ALLOCATOR,
+        "risk_managers": PluginType.RISK_MANAGER,
+        "rebalancers": PluginType.REBALANCER,
+        "cost_models": PluginType.COST_MODEL,
+        "data_sources": PluginType.DATA_SOURCE,
+        "schedulers": PluginType.SCHEDULER,
+        "models": PluginType.MODEL,
+    }
 
-    elif args.type == "data_sources":
-        print("可用数据源:")
-        print("  jqdata, tushare, akshare, local_parquet")
+    pt = type_map[args.type]
+    plugins = PluginRegistry.list_plugins(pt)
+    print(f"可用{args.type} ({len(plugins)}):")
+    for name in plugins:
+        try:
+            meta = PluginRegistry.get_meta(pt, name)
+            desc = f"  # {meta.description}" if meta.description else ""
+        except Exception:
+            desc = ""
+        print(f"  {name}{desc}")
 
 
 def init_command(args) -> None:
@@ -261,3 +283,146 @@ def config_command(args) -> None:
             print("配置已重置")
         else:
             print("配置文件不存在")
+
+
+def optimize_command(args) -> None:
+    """策略优化"""
+    if args.optimize_command == "walk-forward":
+        _optimize_walk_forward(args)
+    elif args.optimize_command == "param-search":
+        _optimize_param_search(args)
+    else:
+        print("请指定优化方法: walk-forward 或 param-search")
+
+
+def _optimize_walk_forward(args) -> None:
+    """Walk-Forward 滚动验证"""
+    from ..optimization.walk_forward import StrategyWalkForward
+
+    print(f"Walk-Forward: {args.strategy_type} {args.version}")
+    print(f"  窗口: {args.window}, 步长: {args.step}")
+
+    try:
+        wf = StrategyWalkForward(test_window=args.window, step=args.step)
+        report = wf.run(args.strategy_type, args.version)
+        print(report.summary())
+
+        if args.output:
+            os.makedirs(args.output, exist_ok=True)
+            output_path = os.path.join(args.output, f"walk_forward_{args.strategy_type}_{args.version}.txt")
+            with open(output_path, "w", encoding="utf-8") as f:
+                f.write(report.summary())
+            print(f"\n报告已保存: {output_path}")
+
+    except Exception as e:
+        print(f"Walk-Forward 失败: {e}")
+
+
+def _optimize_param_search(args) -> None:
+    """参数搜索"""
+    import json as json_module
+    from ..optimization.param_search import ParamSearcher
+
+    print(f"参数搜索: {args.strategy_type} {args.version}")
+    print(f"  试验数: {args.n_trials}, 指标: {args.metric}")
+
+    try:
+        param_space = json_module.loads(args.params)
+    except json_module.JSONDecodeError as e:
+        print(f"参数空间 JSON 解析失败: {e}")
+        return
+
+    try:
+        ps = ParamSearcher(n_trials=args.n_trials, metric=args.metric)
+        report = ps.search(args.strategy_type, args.version, param_space)
+        print(report.summary())
+
+        if args.output:
+            os.makedirs(args.output, exist_ok=True)
+            output_path = os.path.join(args.output, f"param_search_{args.strategy_type}_{args.version}.json")
+            with open(output_path, "w", encoding="utf-8") as f:
+                json_module.dump({
+                    "best_params": report.best_params,
+                    "best_value": report.best_value,
+                    "best_metrics": report.best_metrics,
+                    "n_trials": report.n_trials,
+                    "backend": report.backend,
+                }, f, indent=2, ensure_ascii=False)
+            print(f"\n结果已保存: {output_path}")
+
+    except Exception as e:
+        print(f"参数搜索失败: {e}")
+
+
+def compare_command(args) -> None:
+    """策略对比"""
+    import numpy as np
+    from ..analysis.compare import StrategyComparator
+    from ..analysis.report import ReportGenerator
+
+    print(f"策略对比: {args.result1} vs {args.result2}")
+
+    try:
+        with open(args.result1, "r", encoding="utf-8") as f:
+            r1 = json.load(f)
+        with open(args.result2, "r", encoding="utf-8") as f:
+            r2 = json.load(f)
+
+        name1 = f"{r1.get('strategy_type', r1.get('strategy', 'A'))}_{r1.get('version', '')}"
+        name2 = f"{r2.get('strategy_type', r2.get('strategy', 'B'))}_{r2.get('version', '')}"
+
+        ret1 = np.array(r1.get("daily_returns", []))
+        ret2 = np.array(r2.get("daily_returns", []))
+
+        if len(ret1) == 0 or len(ret2) == 0:
+            print("错误: 结果文件缺少 daily_returns 数据。请确保使用 omq run/backtest 生成结果。")
+            return
+
+        comparator = StrategyComparator({name1: ret1, name2: ret2})
+
+        print("-" * 60)
+        print("指标对比")
+        print("-" * 60)
+        print(comparator.get_comparison_table())
+
+        print("-" * 60)
+        print("相关性矩阵")
+        print("-" * 60)
+        print(comparator.compute_correlation_matrix())
+
+        print("-" * 60)
+        print("策略排名")
+        print("-" * 60)
+        for name, value in comparator.rank_strategies(metric="sharpe_ratio"):
+            print(f"  {name}: sharpe={value:.4f}")
+
+        if args.report:
+            generator = ReportGenerator(
+                strategy_name=f"{name1} vs {name2}",
+                strategy_version="comparison",
+            )
+            generator.generate_html_report(ret1, args.report)
+            print(f"\nHTML 报告已生成: {args.report}")
+
+    except Exception as e:
+        print(f"对比失败: {e}")
+
+
+def signal_command(args) -> None:
+    """获取策略最新持仓信号"""
+    print(f"持仓信号: {args.strategy_type} {args.version}")
+
+    try:
+        strategy = StrategyRegistry.create(args.strategy_type, args.version)
+        positions = strategy.get_latest_positions()
+
+        if not positions:
+            print("  (空 — 当前策略尚未实现持仓信号逻辑)")
+            print("  提示: get_latest_positions() 需在策略迭代中实现")
+        else:
+            print(f"  持仓 ({len(positions)}):")
+            for code, weight in sorted(positions.items(), key=lambda x: -x[1]):
+                print(f"    {code}: {weight:.2%}")
+
+    except Exception as e:
+        print(f"获取信号失败: {e}")

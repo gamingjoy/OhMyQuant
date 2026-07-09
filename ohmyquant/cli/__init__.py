@@ -18,10 +18,13 @@ import sys
 from .commands import (
     analyze_command,
     backtest_command,
+    compare_command,
     config_command,
     init_command,
     list_command,
+    optimize_command,
     run_command,
+    signal_command,
 )
 
 
@@ -63,8 +66,16 @@ def main():
     analyze_parser.add_argument("--compare", help="对比另一个结果文件")
     analyze_parser.add_argument("--report", help="生成报告文件路径")
 
-    list_parser = subparsers.add_parser("list", help="列出策略/因子")
-    list_parser.add_argument("type", choices=["strategies", "factors", "data_sources"], help="列表类型")
+    list_parser = subparsers.add_parser("list", help="列出策略/因子/插件")
+    list_parser.add_argument(
+        "type",
+        choices=[
+            "strategies", "factors", "selectors", "allocators",
+            "risk_managers", "rebalancers", "cost_models",
+            "data_sources", "schedulers", "models",
+        ],
+        help="列表类型",
+    )
 
     init_parser = subparsers.add_parser("init", help="初始化项目")
     init_parser.add_argument("name", help="项目/策略名称")
@@ -74,6 +85,36 @@ def main():
     config_parser.add_argument("action", choices=["show", "set", "reset"], help="操作")
     config_parser.add_argument("--key", help="配置键")
     config_parser.add_argument("--value", help="配置值")
+
+    # optimize 子命令
+    optimize_parser = subparsers.add_parser("optimize", help="策略优化")
+    optimize_sub = optimize_parser.add_subparsers(dest="optimize_command", help="优化方法")
+
+    wf_parser = optimize_sub.add_parser("walk-forward", help="Walk-Forward 滚动验证")
+    wf_parser.add_argument("strategy_type", help="策略类型")
+    wf_parser.add_argument("version", help="策略版本")
+    wf_parser.add_argument("--window", default="1Y", help="测试窗口（如 1Y/6M/63D）")
+    wf_parser.add_argument("--step", default="1Y", help="滑动步长")
+    wf_parser.add_argument("--output", help="输出目录")
+
+    ps_parser = optimize_sub.add_parser("param-search", help="参数搜索")
+    ps_parser.add_argument("strategy_type", help="策略类型")
+    ps_parser.add_argument("version", help="策略版本")
+    ps_parser.add_argument("--params", required=True, help="参数空间 JSON 字符串")
+    ps_parser.add_argument("--n-trials", type=int, default=50, help="最大试验数")
+    ps_parser.add_argument("--metric", default="sharpe", choices=["sharpe", "total_return", "max_drawdown"])
+    ps_parser.add_argument("--output", help="输出目录")
+
+    # compare 子命令
+    compare_parser = subparsers.add_parser("compare", help="策略对比")
+    compare_parser.add_argument("result1", help="第一个结果 JSON 路径")
+    compare_parser.add_argument("result2", help="第二个结果 JSON 路径")
+    compare_parser.add_argument("--report", help="HTML 报告输出路径")
+
+    # signal 子命令
+    signal_parser = subparsers.add_parser("signal", help="获取策略最新持仓信号")
+    signal_parser.add_argument("strategy_type", help="策略类型")
+    signal_parser.add_argument("version", help="策略版本")
 
     args = parser.parse_args()
 
@@ -89,6 +130,12 @@ def main():
         init_command(args)
     elif args.command == "config":
         config_command(args)
+    elif args.command == "optimize":
+        optimize_command(args)
+    elif args.command == "compare":
+        compare_command(args)
+    elif args.command == "signal":
+        signal_command(args)
     else:
         parser.print_help()
 
