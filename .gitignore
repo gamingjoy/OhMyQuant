@@ -1,0 +1,71 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+.eggs/
+build/
+dist/
+develop-eggs/
+sdist/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+.hypothesis/
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Project data (download_a_share 等外部数据不纳入版本控制)
+data/
+*.duckdb
+*.duckdb.wal
+*.parquet
+*.parquet.tmp
+
+# Outputs / reports / results
+output/
+results/
+*.html
+*.png
+*.jpg
+*.svg
+!docs/**/*.png
+
+# Tracking / experiment artifacts
+runs/
+mlruns/
+wandb/
+experiments/
+
+# Secrets / credentials
+.env
+.env.*
+credentials.json
+*.pem
+*.key
+
+# OS / misc
+*.log
+*.tmp
+*.bak
+*.orig
+.TraeCache/

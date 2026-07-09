@@ -1,0 +1,38 @@
+# YCJ 量化策略 v1 配置
+
+strategy_type: ycj
+strategy_version: v1
+strategy_name: "YCJ 量化策略 v1"
+description: "基于 ICIR 选股的量化策略 v1"
+
+backtest:
+  start_date: "2015-01-01"
+  end_date: "2024-12-31"
+  data_start_date: "2010-01-01"
+  transaction_cost: 0.001
+
+selection:
+  method: icir
+  top_n: 50
+  max_stock_weight: 0.02
+
+risk:
+  target_vol: 0.25
+
+allocation:
+  method: equal
+
+rebalance:
+  frequency: monthly
+  method: cost_benefit
+  cost_model:
+    name: stock_cn
+
+factors:
+  - mom_1m
+  - mom_3m
+  - mom_6m
+
+data:
+  source: duckdb
+  data_root: "D:/Work/Project/download_a_share/data"

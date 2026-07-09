@@ -1,0 +1,70 @@
+# YCJ 量化策略 v2 配置
+
+strategy_type: ycj
+strategy_version: v2
+strategy_name: "YCJ 量化策略 v2"
+description: "基于 Hybrid 选股 + HRP 分配的高级量化策略"
+
+backtest:
+  start_date: "2015-01-01"
+  end_date: "2024-12-31"
+  data_start_date: "2010-01-01"
+  transaction_cost: 0.001
+
+selection:
+  method: hybrid
+  top_n: 100
+  max_stock_weight: 0.015
+  min_ic: 0.02
+  min_ic_ir: 0.1
+
+risk:
+  target_vol: 0.20
+  vol_trend_mode: managed_vol
+
+allocation:
+  method: hrp
+  lookback: 60
+
+rebalance:
+  frequency: monthly
+  method: cost_benefit
+  cost_benefit_threshold: 0.001
+  cost_model:
+    name: stock_cn
+
+factors:
+  - mom_1m
+  - mom_3m
+  - mom_6m
+  - rev_5d
+  - rev_20d
+  - vol_20d
+  - vol_60d
+
+pools:
+  main:
+    - "600519.SH"   # 贵州茅台
+    - "601318.SH"   # 中国平安
+    - "600036.SH"   # 招商银行
+    - "000858.SZ"   # 五粮液
+    - "000333.SZ"   # 美的集团
+    - "600276.SH"   # 恒瑞医药
+    - "601166.SH"   # 兴业银行
+    - "002594.SZ"   # 比亚迪
+    - "600030.SH"   # 中信证券
+    - "601888.SH"   # 中国中免
+    - "600050.SH"   # 中国联通
+    - "601398.SH"   # 工商银行
+    - "600887.SH"   # 伊利股份
+    - "000651.SZ"   # 格力电器
+    - "601012.SH"   # 隆基绿能
+    - "600406.SH"   # 国电南瑞
+    - "002415.SZ"   # 海康威视
+    - "600031.SH"   # 三一重工
+    - "601628.SH"   # 中国人寿
+    - "000568.SZ"   # 泸州老窖
+
+data:
+  source: duckdb
+  data_root: "D:/Work/Project/download_a_share/data"

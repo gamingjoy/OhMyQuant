@@ -1,0 +1,55 @@
+# ETF 动量轮动策略 v1 配置
+
+strategy_type: etf
+strategy_version: v1
+strategy_name: "ETF 动量轮动策略 v1"
+description: "主流ETF动量轮动策略，按动量排名选 Top-3，月度调仓"
+
+backtest:
+  start_date: "2015-01-01"
+  end_date: "2024-12-31"
+  data_start_date: "2010-01-01"
+  transaction_cost: 0.001
+
+selection:
+  method: icir
+  top_n: 3
+  max_stock_weight: 0.34
+
+portfolio:
+  max_stock_weight: 0.34
+
+risk:
+  target_vol: 0.20
+
+allocation:
+  method: equal
+
+rebalance:
+  frequency: monthly
+  method: cost_benefit
+  cost_model:
+    name: etf_cn
+
+factors:
+  - mom_1m
+  - mom_3m
+
+pools:
+  main:
+    - "510300.SH"   # 沪深300ETF
+    - "510500.SH"   # 中证500ETF
+    - "159915.SZ"   # 创业板ETF
+    - "588000.SH"   # 科创50ETF
+    - "510050.SH"   # 50ETF
+    - "512100.SH"   # 中证1000ETF
+    - "515790.SH"   # 光伏ETF
+    - "512480.SH"   # 半导体ETF
+    - "510880.SH"   # 红利ETF
+    - "512000.SH"   # 券商ETF
+    - "159920.SZ"   # 恒生ETF
+    - "513100.SH"   # 纳指ETF
+
+data:
+  source: duckdb
+  data_root: "D:/Work/Project/download_a_share/data"
