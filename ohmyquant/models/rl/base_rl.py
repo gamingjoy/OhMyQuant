@@ -42,6 +42,7 @@ class BaseRLModel(Model):
         self.learning_rate = self.config.get("learning_rate", 0.0003)
         self.n_steps = self.config.get("n_steps", 2048)
         self.batch_size = self.config.get("batch_size", 64)
+        self.device = self.config.get("device", "cpu")
         self.model = None
         self._env = None
 
@@ -71,6 +72,7 @@ class BaseRLModel(Model):
             n_steps=self.n_steps,
             batch_size=self.batch_size,
             verbose=0,
+            device=self.device,
         )
         self.model.learn(total_timesteps=self.total_timesteps)
         self._fitted = True

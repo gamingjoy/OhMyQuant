@@ -16,7 +16,6 @@ from __future__ import annotations
 
 from ohmyquant.strategy import register_strategy
 from ohmyquant.strategy.base import BaseStrategy
-from ohmyquant.engine.base import BacktestResult
 
 ETF_POOL = [
     "510300.SH",
@@ -33,18 +32,6 @@ ETF_POOL = [
 @register_strategy("etf", "v2")
 class ETFMixedV2(BaseStrategy):
     """A股+ETF 混合策略 v2"""
-
-    def run(self) -> BacktestResult:
-        """执行策略"""
-        from ...strategy.runner import StrategyRunner
-
-        runner = StrategyRunner(self.config)
-        result = runner.run()
-        return result.backtest_result
-
-    def get_latest_positions(self) -> dict[str, float]:
-        """获取最新持仓"""
-        return {}
 
     @classmethod
     def from_version(

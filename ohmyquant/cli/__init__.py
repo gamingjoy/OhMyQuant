@@ -20,6 +20,7 @@ from .commands import (
     backtest_command,
     compare_command,
     config_command,
+    ensemble_command,
     init_command,
     list_command,
     optimize_command,
@@ -36,11 +37,13 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例:
-  omq run ycj v1
+  omq run ycj v1                      # 运行策略回测
   omq backtest --strategy ycj --version v1 --start 2020-01-01
-  omq analyze --results results.json
-  omq list strategies
-  omq init my_strategy
+  omq list strategies                  # 列出所有策略
+  omq compare a.json b.json            # 对比两个策略
+  omq ensemble dl_v1 etf_v3 --weighting perf_weight  # 多策略集成
+  omq optimize walk-forward ycj v1     # Walk-Forward 验证
+  omq signal ycj v1                    # 获取最新持仓信号
         """,
     )
 
@@ -116,6 +119,17 @@ def main():
     signal_parser.add_argument("strategy_type", help="策略类型")
     signal_parser.add_argument("version", help="策略版本")
 
+    # ensemble 子命令
+    ensemble_parser = subparsers.add_parser("ensemble", help="多策略集成")
+    ensemble_parser.add_argument("strategies", nargs="+", help="策略名（如 ycj_v1）或结果文件路径")
+    ensemble_parser.add_argument(
+        "--weighting",
+        choices=["equal", "perf_weight", "ir_weight"],
+        default="perf_weight",
+        help="加权方式",
+    )
+    ensemble_parser.add_argument("--output", help="输出目录")
+
     args = parser.parse_args()
 
     if args.command == "run":
@@ -136,6 +150,8 @@ def main():
         compare_command(args)
     elif args.command == "signal":
         signal_command(args)
+    elif args.command == "ensemble":
+        ensemble_command(args)
     else:
         parser.print_help()
 

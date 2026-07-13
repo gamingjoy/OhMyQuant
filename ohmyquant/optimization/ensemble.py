@@ -10,14 +10,24 @@
 收益对齐：取各成分日期交集，缺失日按 0 填充（假设该日无持仓）。
 
 Usage:
+    # 方式 1: 从已保存的结果文件加载（推荐，避免重跑回测）
+    ens = StrategyEnsemble.from_results(
+        weighting="perf_weight",
+        result_files=["output/ycj_v1/results.json", "output/etf_v1/results.json"],
+    )
+    result = ens.run_from_results()
+    print(result.metrics.sharpe_ratio)
+
+    # 方式 2: 重新运行回测（耗时较长）
     ens = StrategyEnsemble(weighting="perf_weight")
     ens.add_strategy("ycj", "v1")
     ens.add_strategy("etf", "v1")
     result = ens.run()
-    print(result.metrics.sharpe_ratio)
 """
 from __future__ import annotations
 
+import json
+import os
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -76,6 +86,7 @@ class StrategyEnsemble:
             np.asarray(benchmark_returns) if benchmark_returns is not None else None
         )
         self._strategies: list[tuple[str, str, float]] = []
+        self._loaded: list[tuple[str, np.ndarray, list[str]]] = []
 
     def add_strategy(
         self, strategy_type: str, version: str, weight: float = 1.0
@@ -89,6 +100,38 @@ class StrategyEnsemble:
         """
         self._strategies.append((strategy_type, version, weight))
         return self
+
+    @classmethod
+    def from_results(
+        cls,
+        result_files: list[str],
+        weighting: str = "equal",
+        benchmark_returns: np.ndarray | list[float] | None = None,
+    ) -> "StrategyEnsemble":
+        """从已保存的 results.json 文件加载策略收益序列
+
+        避免重新运行回测，适合快速试验不同加权方式。
+
+        Args:
+            result_files: results.json 文件路径列表
+            weighting: 加权方式
+            benchmark_returns: 基准收益（ir_weight 用）
+        """
+        ens = cls(weighting=weighting, benchmark_returns=benchmark_returns)
+        for path in result_files:
+            if not os.path.exists(path):
+                raise FileNotFoundError(f"结果文件不存在: {path}")
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            name = f"{data.get('strategy_type', data.get('strategy', '?'))}_{data.get('version', '?')}"
+            returns = np.array(data.get("daily_returns", []))
+            dates = data.get("dates", [])
+            if len(returns) == 0:
+                logger.warning(f"结果文件 {path} 缺少 daily_returns，跳过")
+                continue
+            ens._loaded.append((name, returns, dates))
+            logger.info(f"加载策略结果: {name} ({len(returns)} 天)")
+        return ens
 
     def _run_constituents(
         self, config_overrides: dict[str, Any] | None
@@ -223,6 +266,103 @@ class StrategyEnsemble:
                     "weight": float(w),
                     "sharpe": compute_sharpe_ratio(returns),
                     "n_days": len(dates),
+                }
+            )
+
+        logger.info(
+            f"集成完成: {len(common_dates)} 天, "
+            f"combined_sharpe={metrics.sharpe_ratio:.4f}, "
+            f"weights={[round(w, 3) for w in weights]}"
+        )
+
+        return EnsembleResult(
+            weighting=self.weighting,
+            nav=nav_list,
+            dates=common_dates,
+            metrics=metrics,
+            constituents=constituent_info,
+        )
+
+    def run_from_results(self) -> EnsembleResult:
+        """从已加载的结果文件运行集成（不重跑回测）
+
+        需先通过 from_results() 类方法创建实例。
+
+        Returns:
+            EnsembleResult
+        """
+        if not self._loaded:
+            raise ValueError("未加载任何结果文件，请使用 from_results() 创建实例")
+
+        logger.info(
+            f"开始集成（从结果文件）: {len(self._loaded)} 个策略, weighting={self.weighting}"
+        )
+
+        # 计算权重（直接用 returns，不需要完整 constituent 格式）
+        n = len(self._loaded)
+        if self.weighting == "equal":
+            weights = np.ones(n) / n
+        else:
+            scores = np.zeros(n)
+            for i, (_, returns, _) in enumerate(self._loaded):
+                if self.weighting == "ir_weight" and self.benchmark_returns is not None:
+                    bench = self.benchmark_returns
+                    m = min(len(returns), len(bench))
+                    if m > 1:
+                        scores[i] = max(compute_info_ratio(returns[:m], bench[:m]), 0.0)
+                    else:
+                        scores[i] = 0.0
+                else:
+                    scores[i] = max(compute_sharpe_ratio(returns), 0.0)
+            total = scores.sum()
+            if total <= 0:
+                logger.info("所有成分 Sharpe/IR ≤ 0，退化为等权")
+                weights = np.ones(n) / n
+            else:
+                weights = scores / total
+
+        # 对齐收益：有 dates 用日期交集，无 dates 用索引对齐（截断到最短）
+        has_dates = all(len(d) > 0 for _, _, d in self._loaded)
+        if has_dates:
+            common = set(self._loaded[0][2])
+            for _, _, dates in self._loaded[1:]:
+                common &= set(dates)
+            common_dates = sorted(common)
+            aligned = []
+            for _, returns, dates in self._loaded:
+                d2r = dict(zip(dates, returns.tolist() if hasattr(returns, "tolist") else list(returns)))
+                aligned.append(np.array([d2r.get(d, 0.0) for d in common_dates]))
+        else:
+            min_len = min(len(r) for _, r, _ in self._loaded)
+            common_dates = [str(i) for i in range(min_len)]
+            aligned = [r[:min_len] for _, r, _ in self._loaded]
+
+        if not common_dates:
+            return EnsembleResult(
+                weighting=self.weighting,
+                nav=[1.0],
+                dates=[],
+                metrics=PerformanceMetrics(),
+                constituents=[],
+            )
+
+        combined = np.zeros(len(common_dates))
+        for w, ret in zip(weights, aligned):
+            combined += w * ret
+
+        nav = np.cumprod(1.0 + combined)
+        nav_list = nav.tolist()
+
+        metrics = compute_metrics(combined)
+
+        constituent_info = []
+        for (name, returns, dates), w in zip(self._loaded, weights):
+            constituent_info.append(
+                {
+                    "strategy": name,
+                    "weight": float(w),
+                    "sharpe": compute_sharpe_ratio(returns),
+                    "n_days": len(dates) if dates else len(returns),
                 }
             )
 

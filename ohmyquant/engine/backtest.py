@@ -398,8 +398,13 @@ class BacktestEngine(BaseEngine):
         if not all_dates:
             return {}
 
-        # 计算调仓日
+        # 计算调仓日，并过滤到回测区间内
+        # 数据从 data_start_date 加载（供 ML/RL 模型 lookback），但选股只在 backtest_start 之后执行
         rebalance_dates = self.scheduler.get_rebalance_dates(all_dates)
+        rebalance_dates = {
+            d for d in rebalance_dates
+            if self.backtest_start <= d <= self.backtest_end
+        }
 
         stock_weights_by_date: dict[str, dict[str, dict[str, float]]] = {}
 

@@ -55,7 +55,7 @@ def run_command(args) -> None:
             print("-" * 60)
             print_metrics(metrics)
 
-        output_dir = args.output or "./output"
+        output_dir = args.output or f"./output/{args.strategy_type}_{args.version}"
         os.makedirs(output_dir, exist_ok=True)
 
         result_dict = {
@@ -63,6 +63,7 @@ def run_command(args) -> None:
             "version": args.version,
             "metrics": _json_safe(metrics.__dict__) if 'metrics' in dir() else {},
             "daily_returns": _json_safe(returns.tolist() if hasattr(returns, "tolist") else list(returns)),
+            "dates": _json_safe(result.backtest_result.dates) if result.backtest_result and hasattr(result.backtest_result, 'dates') else [],
         }
         with open(os.path.join(output_dir, "results.json"), "w", encoding="utf-8") as f:
             json.dump(result_dict, f, indent=2, ensure_ascii=False)
@@ -100,7 +101,7 @@ def backtest_command(args) -> None:
             print("-" * 60)
             print_metrics(metrics)
 
-        output_dir = args.output or "./output"
+        output_dir = args.output or f"./output/{args.strategy}_{args.version}"
         os.makedirs(output_dir, exist_ok=True)
 
         with open(os.path.join(output_dir, "backtest_results.json"), "w", encoding="utf-8") as f:
@@ -109,6 +110,7 @@ def backtest_command(args) -> None:
                 "version": args.version,
                 "metrics": _json_safe(metrics.__dict__),
                 "daily_returns": _json_safe(returns.tolist() if hasattr(returns, "tolist") else list(returns)),
+                "dates": _json_safe(result.backtest_result.dates) if result.backtest_result and hasattr(result.backtest_result, 'dates') else [],
             }, f, indent=2, ensure_ascii=False)
 
         print(f"\n回测完成")
@@ -441,3 +443,56 @@ def signal_command(args) -> None:
 
     except Exception as e:
         print(f"获取信号失败: {e}")
+
+
+def ensemble_command(args) -> None:
+    """多策略集成"""
+    from ..optimization.ensemble import StrategyEnsemble
+
+    weighting = args.weighting
+    strategies = args.strategies
+
+    # 解析策略名为结果文件路径
+    result_files = []
+    for s in strategies:
+        if "/" in s or "\\" in s or s.endswith(".json"):
+            result_files.append(s)
+        else:
+            result_files.append(f"./output/{s}/results.json")
+
+    print(f"策略集成: {' + '.join(strategies)}")
+    print(f"加权方式: {weighting}")
+    print("-" * 60)
+
+    try:
+        ens = StrategyEnsemble.from_results(
+            result_files=result_files,
+            weighting=weighting,
+        )
+        result = ens.run_from_results()
+
+        print(f"集成天数: {len(result.dates)}")
+        print(f"成分策略:")
+        for c in result.constituents:
+            print(f"  {c['strategy']}: weight={c['weight']:.4f}, sharpe={c['sharpe']:.4f}")
+
+        print("-" * 60)
+        print("集成绩效:")
+        print_metrics(result.metrics)
+
+        # 保存结果
+        output_dir = args.output or "./output/ensemble"
+        os.makedirs(output_dir, exist_ok=True)
+        result_dict = {
+            "weighting": result.weighting,
+            "metrics": _json_safe(result.metrics.__dict__),
+            "nav": result.nav,
+            "dates": result.dates,
+            "constituents": result.constituents,
+        }
+        with open(os.path.join(output_dir, "ensemble_results.json"), "w", encoding="utf-8") as f:
+            json.dump(result_dict, f, indent=2, ensure_ascii=False)
+        print(f"\n结果已保存到: {output_dir}")
+
+    except Exception as e:
+        print(f"集成失败: {e}")

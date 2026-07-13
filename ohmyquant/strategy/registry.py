@@ -42,14 +42,7 @@ class StrategyRegistry:
         Raises:
             ValueError: 策略不存在
         """
-        # 先从 PluginRegistry 查找
-        try:
-            plugin_name = f"{strategy_type}_{version}"
-            return PluginRegistry.get(PluginType.STRATEGY, plugin_name)
-        except Exception:
-            pass
-
-        # 动态导入
+        # VersionManager.import_strategy_class 内部先查 PluginRegistry，再回退到动态导入
         try:
             return VersionManager.import_strategy_class(strategy_type, version)
         except Exception as e:
@@ -114,32 +107,20 @@ class StrategyRegistry:
             list[dict[str, Any]]: 策略信息列表
         """
         strategies: list[dict[str, Any]] = []
-
-        # 从文件系统获取
         for strategy_type in VersionManager.list_strategy_types():
             for version in VersionManager.list_versions(strategy_type):
+                try:
+                    strategy_class = cls.get_strategy_class(strategy_type, version)
+                    description = getattr(strategy_class, "__doc__", "") or ""
+                except Exception:
+                    description = ""
                 strategies.append(
                     {
                         "strategy_type": strategy_type,
                         "version": version,
-                        "description": "",
+                        "description": description,
                     }
                 )
-
-        # 从 PluginRegistry 获取已注册的策略
-        for plugin_name in PluginRegistry.list_plugins(PluginType.STRATEGY):
-            try:
-                strategy_class = PluginRegistry.get(PluginType.STRATEGY, plugin_name)
-                strategies.append(
-                    {
-                        "strategy_type": plugin_name.split("_")[0],
-                        "version": plugin_name.split("_")[1] if "_" in plugin_name else "v1",
-                        "description": getattr(strategy_class, "__doc__", ""),
-                    }
-                )
-            except Exception:
-                pass
-
         return strategies
 
     @classmethod

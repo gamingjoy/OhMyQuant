@@ -19,10 +19,6 @@ from typing import Any
 from ..core.config_models import StrategyConfig
 from ..core.logging import get_logger
 from ..data.base import DataCatalog
-from ..data.sources.csv_source import CSVSource
-from ..data.sources.duckdb_source import DuckDBSource
-from ..data.sources.jqdata_source import JQDataSource
-from ..data.sources.local_parquet_source import LocalParquetSource
 from ..engine.backtest import BacktestEngine
 from ..engine.base import BacktestResult
 

@@ -119,14 +119,5 @@ class ModelSelector(BaseSelector):
 
         return self.apply_weight_cap(weights)
 
-    def select_strong_factors(self, ic_df: pl.DataFrame, train_end: str) -> list[str]:
-        """ML 模式下因子筛选：IC 绝对值前15"""
-        factor_cols = [c for c in ic_df.columns if c != "date"]
-        train_ic = ic_df.filter(pl.col("date") <= pl.lit(train_end).str.to_date())
-        ic_mean = train_ic.select([pl.col(c).mean() for c in factor_cols])
-        means = {c: abs(ic_mean[c][0] or 0) for c in factor_cols}
-        sorted_factors = sorted(means.items(), key=lambda x: x[1], reverse=True)
-        return [f for f, _ in sorted_factors[:15]]
-
 
 __all__ = ["ModelSelector"]

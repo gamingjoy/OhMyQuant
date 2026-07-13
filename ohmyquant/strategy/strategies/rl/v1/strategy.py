@@ -30,7 +30,6 @@
 """
 from __future__ import annotations
 
-from ohmyquant.engine.base import BacktestResult
 from ohmyquant.strategy import register_strategy
 from ohmyquant.strategy.base import BaseStrategy
 
@@ -45,16 +44,6 @@ RL_POOL = [
 @register_strategy("rl", "v1")
 class RLStrategyV1(BaseStrategy):
     """RL 组合管理策略 v1（PPO）"""
-
-    def run(self) -> BacktestResult:
-        from ...strategy.runner import StrategyRunner
-
-        runner = StrategyRunner(self.config)
-        result = runner.run()
-        return result.backtest_result
-
-    def get_latest_positions(self) -> dict[str, float]:
-        return {}
 
     @classmethod
     def from_version(

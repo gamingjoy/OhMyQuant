@@ -15,14 +15,15 @@ selection:
   method: rl
   model_name: ppo_portfolio
   model:
-    total_timesteps: 10000
+    total_timesteps: 5000
     transaction_cost: 0.001
     learning_rate: 0.0003
     n_steps: 2048
     batch_size: 64
+    device: cpu
   ml:
     train_window: 252
-    retrain_freq: 63
+    retrain_freq: 126
   top_n: 10
   max_stock_weight: 0.2
 

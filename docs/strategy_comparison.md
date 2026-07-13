@@ -196,6 +196,66 @@ DSR:                  0.0345
 
 ---
 
+## 多策略集成 (Ensemble)
+
+[StrategyEnsemble](file:///d:/Work/Project/OhMyQuant/ohmyquant/optimization/ensemble.py) 将多个策略的日收益按权重组合，输出集成净值与绩效。
+
+### 加权方式
+
+| 方式 | 说明 |
+|------|------|
+| `equal` | 等权 1/N |
+| `perf_weight` | 按 Sharpe 加权（w_i ∝ max(sharpe_i, 0)，全 ≤0 退化为等权） |
+| `ir_weight` | 按信息比率加权（需 benchmark_returns） |
+
+### 从已保存结果加载（推荐，无需重跑回测）
+
+```python
+from ohmyquant.optimization import StrategyEnsemble
+
+ens = StrategyEnsemble.from_results(
+    result_files=["output/dl_v1/results.json", "output/etf_v3/results.json"],
+    weighting="perf_weight",
+)
+result = ens.run_from_results()
+print(f"集成 Sharpe: {result.metrics.sharpe_ratio:.4f}")
+for c in result.constituents:
+    print(f"  {c['strategy']}: weight={c['weight']:.4f}")
+```
+
+### 重新运行回测（耗时较长）
+
+```python
+ens = StrategyEnsemble(weighting="perf_weight")
+ens.add_strategy("dl", "v1")
+ens.add_strategy("etf", "v3")
+result = ens.run()
+```
+
+### CLI 命令
+
+```bash
+# 4 策略 perf_weight 集成
+omq ensemble dl_v1 ycj_v1 rl_v1 etf_v3 --weighting perf_weight
+
+# 等权集成
+omq ensemble dl_v1 etf_v3 --weighting equal
+```
+
+### 选股建议
+
+选择低相关性策略组合可获得更好的分散化效果：
+
+| 组合 | 相关性 | 集成 Sharpe | 集成波动率 |
+|------|--------|-------------|------------|
+| dl_v1 + etf_v1 | 0.29 | 0.956 | 16.20% |
+| dl_v1 + etf_v3 | 0.18 | 0.971 | 15.58% |
+| dl_v1+ycj_v1+rl_v1+etf_v3 | 0.18-0.82 | **0.999** | **15.29%** |
+
+> etf_v3 与股票策略相关性最低（0.18-0.23），是最佳分散化标的。
+
+---
+
 ## CLI 命令
 
 ```bash

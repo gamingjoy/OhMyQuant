@@ -13,11 +13,11 @@ backtest:
 
 selection:
   method: hybrid
-  top_n: 50
-  max_stock_weight: 0.02
+  top_n: 8
+  max_stock_weight: 0.15
 
 portfolio:
-  max_stock_weight: 0.02
+  max_stock_weight: 0.15
 
 risk:
   target_vol: 0.20

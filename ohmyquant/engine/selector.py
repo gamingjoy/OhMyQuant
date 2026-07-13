@@ -57,14 +57,22 @@ class BaseSelector(ABC):
         """
         ...
 
-    @abstractmethod
     def select_strong_factors(
         self,
         ic_df: pl.DataFrame,
         train_end: str,
     ) -> list[str]:
-        """筛选强因子"""
-        ...
+        """筛选强因子：按 IC 绝对值取前 15
+
+        ML/DL/Model 选股器共用此默认实现。
+        ICIR/Hybrid/Momentum/RL 选股器按需重写。
+        """
+        factor_cols = [c for c in ic_df.columns if c != "date"]
+        train_ic = ic_df.filter(pl.col("date") <= pl.lit(train_end).str.to_date())
+        ic_mean = train_ic.select([pl.col(c).mean() for c in factor_cols])
+        means = {c: abs(ic_mean[c][0] or 0) for c in factor_cols}
+        sorted_factors = sorted(means.items(), key=lambda x: x[1], reverse=True)
+        return [f for f, _ in sorted_factors[:15]]
 
     def apply_weight_cap(
         self, weights: dict[str, float], cap: float | None = None

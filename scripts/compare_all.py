@@ -12,6 +12,7 @@ strategies = {
     "dh_v1": "output/dh_v1/results.json",
     "etf_v1": "output/etf_v1/results.json",
     "etf_v2": "output/etf_v2/results.json",
+    "etf_v3": "output/etf_v3/results.json",
     "dl_v1": "output/dl_v1/results.json",
     "rl_v1": "output/rl_v1/results.json",
 }

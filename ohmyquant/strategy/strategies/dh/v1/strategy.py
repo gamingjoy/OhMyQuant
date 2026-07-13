@@ -13,24 +13,11 @@ from __future__ import annotations
 
 from ohmyquant.strategy.base import BaseStrategy
 from ohmyquant.strategy import register_strategy
-from ohmyquant.engine.base import BacktestResult
 
 
 @register_strategy("dh", "v1")
 class DHStrategyV1(BaseStrategy):
     """DH 人工策略 v1"""
-
-    def run(self) -> BacktestResult:
-        """执行策略"""
-        from ...strategy.runner import StrategyRunner
-
-        runner = StrategyRunner(self.config)
-        result = runner.run()
-        return result.backtest_result
-
-    def get_latest_positions(self) -> dict[str, float]:
-        """获取最新持仓"""
-        return {}
 
     @classmethod
     def from_version(

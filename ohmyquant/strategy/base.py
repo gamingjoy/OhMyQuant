@@ -49,8 +49,8 @@ class BaseStrategy(ABC):
 
     核心接口：
         - from_version(strategy_type, version, config): 工厂方法，创建策略实例
-        - run(): 执行策略，返回回测结果
-        - get_latest_positions(): 获取最新持仓
+        - run(): 执行策略，返回回测结果（默认实现：通过 StrategyRunner 运行）
+        - get_latest_positions(): 获取最新持仓（默认实现：返回空）
         - get_config_summary(): 获取配置摘要
     """
 
@@ -60,23 +60,29 @@ class BaseStrategy(ABC):
         else:
             self.config = config
 
-    @abstractmethod
     def run(self) -> BacktestResult:
-        """执行策略
+        """执行策略（默认实现：通过 StrategyRunner 运行回测）
+
+        子类通常无需重写此方法，只需在 from_version 中提供配置即可。
 
         Returns:
             BacktestResult: 回测结果
         """
-        ...
+        from .runner import StrategyRunner
 
-    @abstractmethod
+        runner = StrategyRunner(self.config)
+        result = runner.run()
+        return result.backtest_result
+
     def get_latest_positions(self) -> dict[str, float]:
         """获取最新持仓
+
+        默认返回空字典。子类可在实现持仓信号逻辑后重写。
 
         Returns:
             dict[str, float]: {code: weight} 持仓权重
         """
-        ...
+        return {}
 
     def get_config_summary(self) -> dict[str, Any]:
         """获取配置摘要
