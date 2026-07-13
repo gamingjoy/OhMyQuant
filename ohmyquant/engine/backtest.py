@@ -73,14 +73,24 @@ class BacktestEngine(BaseEngine):
             self.config = StrategyConfig(**config) if isinstance(config, dict) else None
 
         # 提取子配置
+        # to_flat_dict() 将 backtest 配置展平为顶层键（backtest_start, backtest_end 等）
+        # 而非嵌套在 "backtest" 子字典中
         self.backtest_cfg = flat.get("backtest", {})
-        if isinstance(self.backtest_cfg, dict):
+        if isinstance(self.backtest_cfg, dict) and self.backtest_cfg:
             self.backtest_start = self.backtest_cfg.get("start_date", "2015-01-01")
             self.backtest_end = self.backtest_cfg.get("end_date", "2026-06-01")
             self.data_start_date = self.backtest_cfg.get("data_start_date", "2010-01-01")
             self.train_end = self.backtest_cfg.get("train_end", "2024-12-31")
             self.transaction_cost = self.backtest_cfg.get("transaction_cost", 0.001)
             self.trading_days = self.backtest_cfg.get("trading_days", 242)
+        elif "backtest_start" in flat:
+            # flat dict 格式（to_flat_dict 输出）
+            self.backtest_start = flat.get("backtest_start", "2015-01-01")
+            self.backtest_end = flat.get("backtest_end", "2026-06-01")
+            self.data_start_date = flat.get("data_start_date", "2010-01-01")
+            self.train_end = flat.get("train_end", "2024-12-31")
+            self.transaction_cost = flat.get("transaction_cost", 0.001)
+            self.trading_days = flat.get("trading_days", 242)
         else:
             # StrategyConfig 对象
             bt = self.config.backtest
@@ -212,12 +222,15 @@ class BacktestEngine(BaseEngine):
         pool_data = {}
         for pool_name, codes in pools.items():
             logger.info(f"加载池 {pool_name} 数据: {len(codes)} 只股票")
+            # ETF 使用未复权价格：postfq 因子在分红除权时存在不连续跳变（历史未追溯调整）
+            is_etf = bool(codes) and codes[0].startswith(("51", "15", "56", "58"))
+            adjust = "none" if is_etf else "post"
             ohlcv = self.data_catalog.get_ohlcv(
-                codes, self.data_start_date, end_date, adjust="post"
+                codes, self.data_start_date, end_date, adjust=adjust
             )
 
             # 尝试加载估值数据（仅股票，ETF 无估值）
-            if codes and not codes[0].startswith(("51", "15", "56", "58")):
+            if not is_etf:
                 try:
                     val_df = self.data_catalog.get_valuation(
                         codes, self.data_start_date, end_date
