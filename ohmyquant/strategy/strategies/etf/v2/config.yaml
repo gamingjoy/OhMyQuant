@@ -1,0 +1,56 @@
+# A股+ETF 混合策略 v2 配置
+
+strategy_type: etf
+strategy_version: v2
+strategy_name: "A股+ETF 混合策略 v2"
+description: "A股+ETF混合策略，使用混合成本模型"
+
+backtest:
+  start_date: "2015-01-01"
+  end_date: "2024-12-31"
+  data_start_date: "2010-01-01"
+  transaction_cost: 0.001
+
+selection:
+  method: hybrid
+  top_n: 8
+  max_stock_weight: 0.15
+
+portfolio:
+  max_stock_weight: 0.15
+
+risk:
+  target_vol: 0.20
+  vol_trend_mode: managed_vol
+
+allocation:
+  method: hrp
+  lookback: 60
+
+rebalance:
+  frequency: monthly
+  method: cost_benefit
+  cost_model:
+    name: mixed_cn
+  cost_benefit_threshold: 0.001
+
+factors:
+  - mom_1m
+  - mom_3m
+  - rev_5d
+  - vol_20d
+
+pools:
+  etf_pool:
+    - "510300.SH"   # 沪深300ETF
+    - "510500.SH"   # 中证500ETF
+    - "159915.SZ"   # 创业板ETF
+    - "588000.SH"   # 科创50ETF
+    - "510050.SH"   # 50ETF
+    - "512100.SH"   # 中证1000ETF
+    - "515790.SH"   # 光伏ETF
+    - "512480.SH"   # 半导体ETF
+
+data:
+  source: duckdb
+  data_root: "D:/Work/Project/download_a_share/data"

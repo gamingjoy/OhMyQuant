@@ -1,0 +1,20 @@
+# OhMyQuant 核心依赖
+polars>=0.20.0
+duckdb>=0.9.0
+pydantic>=2.0.0
+loguru>=0.7.0
+pyyaml>=6.0
+numpy>=1.24.0
+
+# 可选依赖（按需安装）
+# lightgbm>=4.0.0          # ML 策略
+# torch>=2.0.0             # DL 策略（LSTM/MLP）
+# stable-baselines3>=2.0.0 # RL 策略（PPO）
+# gymnasium>=0.28.0        # RL 环境
+# plotly>=5.0.0            # 可视化
+# scipy>=1.10.0            # 统计检验
+# xgboost>=2.0.0           # XGBoost 模型
+
+# 开发依赖
+# pytest>=7.0.0
+# pytest-cov>=4.0.0

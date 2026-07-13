@@ -1,0 +1,63 @@
+# ETF 动量轮动策略 v3 配置
+#
+# v1 问题: Sharpe 0.16, MaxDD -55% — 熊市无防御
+# v3 改进:
+#   1. drawdown 风控 → 回撤>18%时降至30%仓位，>12%降至45%
+#   2. 崩盘信号检测 → 近5日收益<-5%时额外降仓
+#   3. 降交易成本 0.001→0.0005
+#   4. 保持 v1 的选股逻辑（ICIR+12 ETF+top3）确保alpha不损失
+
+strategy_type: etf
+strategy_version: v3
+strategy_name: "ETF 动量轮动策略 v3 (回撤防御)"
+description: "v1基础上增加drawdown风控，控制最大回撤"
+
+backtest:
+  start_date: "2015-01-01"
+  end_date: "2024-12-31"
+  data_start_date: "2010-01-01"
+  transaction_cost: 0.0005
+
+selection:
+  method: icir
+  top_n: 3
+  max_stock_weight: 0.34
+
+portfolio:
+  max_stock_weight: 0.34
+
+risk:
+  target_vol: 0.20
+  method: drawdown
+
+allocation:
+  method: equal
+
+rebalance:
+  frequency: monthly
+  method: cost_benefit
+  cost_model:
+    name: etf_cn
+
+factors:
+  - mom_1m
+  - mom_3m
+
+pools:
+  main:
+    - "510300.SH"   # 沪深300ETF
+    - "510500.SH"   # 中证500ETF
+    - "159915.SZ"   # 创业板ETF
+    - "588000.SH"   # 科创50ETF
+    - "510050.SH"   # 50ETF
+    - "512100.SH"   # 中证1000ETF
+    - "515790.SH"   # 光伏ETF
+    - "512480.SH"   # 半导体ETF
+    - "510880.SH"   # 红利ETF
+    - "512000.SH"   # 券商ETF
+    - "159920.SZ"   # 恒生ETF
+    - "513100.SH"   # 纳指ETF
+
+data:
+  source: duckdb
+  data_root: "D:/Work/Project/download_a_share/data"
