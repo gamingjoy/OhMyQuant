@@ -54,6 +54,7 @@ class SelectionConfig(BaseModel):
     factor_momentum_down: float = 0.8
     hybrid: dict[str, Any] = Field(default_factory=dict)
     ml: dict[str, Any] = Field(default_factory=dict)
+    mlf: dict[str, Any] = Field(default_factory=dict)
     adaptive: dict[str, Any] = Field(default_factory=dict)
     model_name: str = ""
     model: dict[str, Any] = Field(default_factory=dict)

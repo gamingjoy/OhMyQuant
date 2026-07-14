@@ -279,4 +279,12 @@ omq compare output/v1_results.json output/v2_results.json --report output/compar
 2. **样本外验证**：Walk-Forward 的 consistency 比全周期 Sharpe 更重要。
 3. **避免过拟合**：参数搜索的 n_trials 不宜过大，参数空间不宜过宽。
 4. **成本意识**：调仓频率提升会增加成本，用 `cost_benefit` 调仓器自动权衡。
-5. **命名约定**：人工策略命名 `dh`，量化策略命名 `ycj`，所有文件/目录/代码中统一。
+5. **命名约定**：
+   - 人工策略命名 `dh` (DH_strategy)
+   - 量化策略命名 `ycj` (YCJ_strategy)
+   - ML选因子策略命名 `mlf` (Machine Learning Factor selection)
+   - 所有文件/目录/代码中统一
+   - 版本号 `v1`, `v2`... 标注主迭代
+   - 超参标签写入 description (如 `k25_w1008`)
+   - 收敛后标注 `final` 状态
+   - 详见 [mlf_v2_strategy_report.md](file:///d:/Work/Project/OhMyQuant/docs/mlf_v2_strategy_report.md) 第2节

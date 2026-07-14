@@ -69,3 +69,4 @@ credentials.json
 *.bak
 *.orig
 .TraeCache/
+.trae/
