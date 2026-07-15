@@ -1,0 +1,57 @@
+# ML 选因子策略 v7 配置
+#
+# 基于 v5 (沪深300+行业约束) 优化选股多样性：
+#   - 候选池: 沪深300 (ML 模型在沪深300上预测质量最高)
+#   - 行业配额: max_stocks_per_industry=5，确保至少6个行业
+#   - 行业权重上限: 20%（5只×4%=20%，自然满足）
+
+strategy_type: mlf
+strategy_version: v7
+strategy_name: "ML选因子策略 v7"
+description: "沪深300+行业配额：5只/行业(k25_w1008_csi300_indq5)"
+
+backtest:
+  start_date: "2018-01-01"
+  end_date: "2026-05-31"
+  data_start_date: "2018-01-01"
+  transaction_cost: 0.0008
+
+selection:
+  method: mlf
+  top_n: 30
+  max_stock_weight: 0.04
+  mlf:
+    data_root: "D:/Work/Project/download_a_share/data"
+    top_k_factors: 25
+    train_window: 1008
+    retrain_freq: 21
+    target_horizon: 20
+    neutralize: true
+    max_industry_weight: 0.20
+    max_stocks_per_industry: 5
+
+portfolio:
+  max_stock_weight: 0.04
+
+risk:
+  method: vol_target
+  target_vol: 0.18
+  lookback: 20
+  min_exposure_scale: 0.5
+
+rebalance:
+  frequency: monthly
+  method: cost_benefit
+  cost_model:
+    name: stock_cn
+
+factors:
+  - mom_1m
+
+pools:
+  stocks:
+    index: "000300.XSHG"
+
+data:
+  source: duckdb
+  data_root: "D:/Work/Project/download_a_share/data"

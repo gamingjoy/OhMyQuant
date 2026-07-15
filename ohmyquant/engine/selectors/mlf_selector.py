@@ -11,6 +11,7 @@ Stage 2: ICIR 加权在选定因子上选股
 from __future__ import annotations
 
 import glob
+import hashlib
 import os
 from pathlib import Path
 from typing import Any
@@ -70,6 +71,8 @@ class MLFSelector(BaseSelector):
         self.retrain_freq = mlf_cfg.get("retrain_freq", 21)
         self.target_horizon = mlf_cfg.get("target_horizon", 20)
         self.neutralize = mlf_cfg.get("neutralize", True)
+        self.max_industry_weight = mlf_cfg.get("max_industry_weight", 0.0)
+        self.max_stocks_per_industry = mlf_cfg.get("max_stocks_per_industry", 0)
         self._cache_dir = mlf_cfg.get("cache_dir", "output/cache")
 
         self._factor_names: list[str] | None = None
@@ -78,6 +81,7 @@ class MLFSelector(BaseSelector):
         self._model = None
         self._last_train_idx = -999
         self._dates: list[str] | None = None
+        self._industry_map: dict[str, str] | None = None
 
     def select_strong_factors(
         self, ic_df: pl.DataFrame, train_end: str
@@ -253,9 +257,19 @@ class MLFSelector(BaseSelector):
             for d in dates
         ]
 
-        # 尝试加载缓存
-        cache_key = f"ic_cache_csi300_{self._dates[0]}_{self._dates[-1]}"
+        # 缓存键含股票池哈希，区分不同池
+        codes_signature = hashlib.md5(
+            "|".join(sorted(stock_codes)).encode()
+        ).hexdigest()[:8]
+        cache_key = f"ic_cache_{codes_signature}_{self._dates[0]}_{self._dates[-1]}"
         cache_path = Path(self._cache_dir) / f"{cache_key}.parquet"
+
+        # 向后兼容: 旧的 csi300 硬编码缓存
+        if not cache_path.exists():
+            legacy_path = Path(self._cache_dir) / f"ic_cache_csi300_{self._dates[0]}_{self._dates[-1]}.parquet"
+            if legacy_path.exists():
+                cache_path = legacy_path
+
         if cache_path.exists():
             logger.info(f"加载 IC 缓存: {cache_path}")
             self._ic_cache = pl.read_parquet(cache_path)
@@ -609,6 +623,110 @@ class MLFSelector(BaseSelector):
     # ICIR 选股
     # ------------------------------------------------------------------
 
+    def _load_industry_map(self) -> dict[str, str]:
+        """加载申万一级行业分类（code → industry）"""
+        if self._industry_map is not None:
+            return self._industry_map
+
+        ind_file = os.path.join(
+            self.data_root, "parquet", "stock_industry", "year=2026", "data.parquet"
+        )
+        if not os.path.exists(ind_file):
+            logger.warning(f"行业数据不存在: {ind_file}")
+            self._industry_map = {}
+            return self._industry_map
+
+        df = pl.read_parquet(ind_file)
+        self._industry_map = {}
+        for row in df.iter_rows(named=True):
+            jq_code = row.get("code", "")
+            code = DataSource.denormalize_code(jq_code)
+            industry = row.get("sw_l1_name") or "未分类"
+            self._industry_map[code] = industry
+
+        logger.info(f"行业数据加载: {len(self._industry_map)} 只股票")
+        return self._industry_map
+
+    def _apply_industry_cap(
+        self,
+        weights: dict[str, float],
+        max_industry: float,
+        max_stock: float = 0.0,
+    ) -> dict[str, float]:
+        """行业暴露上限约束：迭代缩放超限行业，excess 按可用容量分配
+
+        关键：分配 excess 时尊重个股权重上限 (max_stock)，避免将个股
+        推过 4% 后被 backtest engine 的 portfolio_optimizer.apply_weight_cap
+        再次截断并 redistributed 回超限行业（undo 行业约束）。
+
+        无法分配的 excess 保留为现金（总权重 < 1，不归一化）。
+        """
+        if max_industry <= 0 or not weights:
+            return weights
+
+        industry_map = self._load_industry_map()
+
+        for _ in range(20):
+            # 计算各行业权重
+            ind_weights: dict[str, float] = {}
+            for code, w in weights.items():
+                ind = industry_map.get(code, "未分类")
+                ind_weights[ind] = ind_weights.get(ind, 0) + w
+
+            # 找超限行业（容差 1e-6）
+            over_industries = {
+                ind for ind, w in ind_weights.items() if w > max_industry + 1e-6
+            }
+            if not over_industries:
+                break
+
+            # 缩放超限行业到 max_industry
+            excess = 0.0
+            for code in weights:
+                ind = industry_map.get(code, "未分类")
+                if ind in over_industries:
+                    scale = max_industry / ind_weights[ind]
+                    excess += weights[code] * (1 - scale)
+                    weights[code] *= scale
+
+            if excess <= 1e-9:
+                break
+
+            # 计算未超限行业的可用容量（考虑个股权重上限）
+            stock_room: dict[str, float] = {}
+            ind_room: dict[str, float] = {}
+            for code, w in weights.items():
+                ind = industry_map.get(code, "未分类")
+                if ind not in over_industries:
+                    room = (max_stock - w) if max_stock > 0 else float("inf")
+                    room = max(0, room)
+                    if room > 1e-9:
+                        stock_room[code] = room
+                        ind_room[ind] = ind_room.get(ind, 0) + room
+
+            total_room = sum(ind_room.values())
+            if total_room <= 1e-9:
+                break  # 无可用容量，excess 保留为现金
+
+            # 按行业可用容量比例分配 excess
+            distributable = min(excess, total_room)
+            for ind, ind_cap in ind_room.items():
+                ind_share = ind_cap / total_room * distributable
+                ind_total = ind_weights.get(ind, 0)
+                if ind_total <= 0:
+                    continue
+                for code in weights:
+                    if (
+                        industry_map.get(code, "未分类") == ind
+                        and code in stock_room
+                    ):
+                        add = ind_share * (weights[code] / ind_total)
+                        # 不超过个股权重上限
+                        add = min(add, stock_room[code])
+                        weights[code] += add
+
+        return weights
+
     def _icir_select(
         self,
         selected_factors: list[str],
@@ -689,7 +807,26 @@ class MLFSelector(BaseSelector):
             return None
 
         sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
-        top_stocks = sorted_scores[: self.top_n]
+
+        # 行业配额选股：限制每个行业的股票数量，确保行业多样性
+        if self.max_stocks_per_industry > 0:
+            industry_map = self._load_industry_map()
+            ind_count: dict[str, int] = {}
+            top_stocks = []
+            for code, score in sorted_scores:
+                ind = industry_map.get(code, "未分类")
+                if ind_count.get(ind, 0) < self.max_stocks_per_industry:
+                    top_stocks.append((code, score))
+                    ind_count[ind] = ind_count.get(ind, 0) + 1
+                if len(top_stocks) >= self.top_n:
+                    break
+            logger.info(
+                f"行业配额选股: {len(top_stocks)} 只, "
+                f"{len(ind_count)} 个行业, "
+                f"top={max(ind_count.values())} bottom={min(ind_count.values())}"
+            )
+        else:
+            top_stocks = sorted_scores[: self.top_n]
 
         total_score = sum(s for _, s in top_stocks)
         if total_score <= 0:
@@ -699,7 +836,17 @@ class MLFSelector(BaseSelector):
         else:
             weights = {code: s / total_score for code, s in top_stocks}
 
-        return self.apply_weight_cap(weights)
+        weights = self.apply_weight_cap(weights)
+
+        # 行业暴露上限约束（传入个股权重上限，避免分配 excess 时推过 4%）
+        if self.max_industry_weight > 0:
+            weights = self._apply_industry_cap(
+                weights, self.max_industry_weight, self.max_stock_weight
+            )
+            # 不归一化：无法分配的 excess 保留为现金（总权重 < 1）
+            # 归一化会按比例放大所有权重，导致个股超 4% 被 backtest 再次截断
+
+        return weights
 
     @staticmethod
     def _get_ic_direction(

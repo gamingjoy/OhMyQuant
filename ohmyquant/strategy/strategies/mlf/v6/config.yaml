@@ -1,0 +1,57 @@
+# ML 选因子策略 v6 配置
+#
+# 基于 v5 优化候选股票池 + 行业约束算法：
+#   - 候选池: 中证800 (000819.XSHG，前800大中盘，避免小微股)
+#   - 行业配额: max_stocks_per_industry=5，确保至少6个行业
+#   - 行业权重上限: 20%（修复算法，尊重个股权重上限）
+
+strategy_type: mlf
+strategy_version: v6
+strategy_name: "ML选因子策略 v6"
+description: "中证800+行业配额：5只/行业+20%权重上限(k25_w1008_csi800_indq5)"
+
+backtest:
+  start_date: "2018-01-01"
+  end_date: "2026-05-31"
+  data_start_date: "2018-01-01"
+  transaction_cost: 0.0008
+
+selection:
+  method: mlf
+  top_n: 30
+  max_stock_weight: 0.04
+  mlf:
+    data_root: "D:/Work/Project/download_a_share/data"
+    top_k_factors: 25
+    train_window: 1008
+    retrain_freq: 21
+    target_horizon: 20
+    neutralize: true
+    max_industry_weight: 0.20
+    max_stocks_per_industry: 5
+
+portfolio:
+  max_stock_weight: 0.04
+
+risk:
+  method: vol_target
+  target_vol: 0.18
+  lookback: 20
+  min_exposure_scale: 0.5
+
+rebalance:
+  frequency: monthly
+  method: cost_benefit
+  cost_model:
+    name: stock_cn
+
+factors:
+  - mom_1m
+
+pools:
+  stocks:
+    index: "000819.XSHG"
+
+data:
+  source: duckdb
+  data_root: "D:/Work/Project/download_a_share/data"
