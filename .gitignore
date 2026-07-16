@@ -42,7 +42,8 @@ Thumbs.db
 *.parquet.tmp
 
 # Outputs / reports / results
-output/
+output/*
+!output/ths/
 results/
 *.html
 *.png
