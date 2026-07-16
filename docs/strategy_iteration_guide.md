@@ -1,91 +1,128 @@
 # 策略迭代指南
 
-本文档是策略迭代的核心操作手册，覆盖从「复制基线策略」到「产出优化版本」的完整流程。
+本文档是策略迭代的核心操作手册，覆盖从「复制基线策略」到「产出优化版本并锁定」的完整流程。
 
 ## 迭代流程总览
 
 ```
-1. 复制目录 (v1 → v2)
-   ↓
-2. 编辑 config.yaml (选股/因子/调仓参数)
-   ↓
-3. 新增因子 (如需) → 参考 factor_development.md
-   ↓
-4. Walk-Forward 验证 (跨周期稳定性)
-   ↓
-5. 参数搜索 (Optuna/网格)
-   ↓
-6. 策略对比 (v1 vs v2)
-   ↓
-7. 策略集成 (多策略组合)
+ 1. 确定数据划分 (IS/OOS)          ← 防前视偏差，最优先
+    ↓
+ 2. 复制策略目录 (v_prev → v_new)
+    ↓
+ 3. 编辑 config.yaml + strategy.py
+    ↓
+ 4. 新增因子 (如需) → 参考 factor_development.md
+    ↓
+ 5. IS 候选池对比 (如需)            ← 用 IS 数据选池
+    ↓
+ 6. IS 超参搜索 (网格/Optuna)       ← 用 IS 数据搜参
+    ↓
+ 7. OOS 最终验证                    ← 只验证，不调参
+    ↓
+ 8. 持仓分析 (行业/换手/权重)
+    ↓
+ 9. 策略对比 (v_prev vs v_new)
+    ↓
+10. 文档更新 (报告 + 总结)
+    ↓
+11. 归档旧版本 + Git 提交
+    ↓
+12. 收敛判断 (IS+OOS 双优 → final)
 ```
 
 ---
 
-## 步骤 1：复制策略目录
+## 步骤 1：确定数据划分 (IS/OOS)
+
+> **这是最重要的步骤**。所有参数选择必须基于 IS 数据，OOS 仅做最终验证。
+
+### 数据划分原则
+
+| 数据集 | 用途 | 说明 |
+|--------|------|------|
+| **IS（样本内）** | 模型训练、参数搜索、候选池选择 | 回测区间 + 训练数据 |
+| **OOS（样本外）** | 最终验证，**不调任何参数** | 仅看结果 |
+
+### mlf 策略的数据划分
+
+```
+数据起始: 2018-01-01 (因子数据从2018开始)
+IS 回测:  2022-01-01 ~ 2025-12-31 (4年，data_start=2018保证训练窗口)
+OOS 回测: 2026-06-01 ~ 2026-07-10 (样本外，仅验证)
+```
+
+### 配置方式
+
+```python
+# IS 回测配置
+strategy.config.backtest.start_date = "2022-01-01"      # IS 起点
+strategy.config.backtest.end_date = "2025-12-31"         # IS 终点
+strategy.config.backtest.data_start_date = "2018-01-01"  # 训练数据起点
+
+# OOS 回测配置 (最终验证时)
+strategy.config.backtest.start_date = "2026-06-01"       # OOS 起点
+strategy.config.backtest.end_date = "2026-07-10"         # OOS 终点
+strategy.config.backtest.data_start_date = "2018-01-01"  # 训练数据不变
+```
+
+**关键规则**: IS 和 OOS 的 `data_start_date` 相同（ML训练需要历史数据），但回测区间不重叠。
+
+参考: [mlf_is_pool_compare.py](file:///d:/Work/Project/OhMyQuant/scripts/mlf_is_pool_compare.py)、[mlf_is_gridsearch.py](file:///d:/Work/Project/OhMyQuant/scripts/mlf_is_gridsearch.py)
+
+---
+
+## 步骤 2：复制策略目录
 
 ```bash
-# 从 ycj/v1 复制到 ycj/v2
-Copy-Item -Recurse ohmyquant/strategy/strategies/ycj/v1 ohmyquant/strategy/strategies/ycj/v2
+# 从 mlf/v5 复制到 mlf/v9
+Copy-Item -Recurse ohmyquant/strategy/strategies/mlf/v5 ohmyquant/strategy/strategies/mlf/v9
 ```
 
 修改 `strategy.py` 中的注册信息：
 
 ```python
-@register_strategy("ycj", "v2")          # 改版本号
-class YCJStrategyV2(BaseStrategy):        # 改类名
+@register_strategy("mlf", "v9")           # 改版本号
+class MLFStrategyV9(BaseStrategy):         # 改类名
     # ...
     def from_version(cls, strategy_type, version, config=None):
         base_config = {
-            "strategy_type": "ycj",
-            "strategy_version": "v2",      # 改版本号
+            "strategy_type": "mlf",
+            "strategy_version": "v9",       # 改版本号
             # ...
         }
 ```
 
-## 步骤 2：编辑 config.yaml
+同时修改 `__init__.py`：
 
-以 ycj/v1 → v2 为例，参考 [ycj/v2/config.yaml](file:///d:/Work/Project/OhMyQuant/ohmyquant/strategy/strategies/ycj/v2/config.yaml)：
+```python
+"""ML 选因子策略 v9"""
+from .strategy import MLFStrategyV9
+__all__ = ["MLFStrategyV9"]
+```
+
+---
+
+## 步骤 3：编辑 config.yaml
+
+以 mlf/v8 为例，参考 [mlf/v8/config.yaml](file:///d:/Work/Project/OhMyQuant/ohmyquant/strategy/strategies/mlf/v8/config.yaml)：
 
 ```yaml
-# 选股方法升级：icir → hybrid
 selection:
-  method: hybrid
-  top_n: 100              # 50 → 100
-  max_stock_weight: 0.015 # 0.02 → 0.015
-  min_ic: 0.02
-  min_ic_ir: 0.1
+  method: mlf
+  top_n: 20                # 选股数量
+  max_stock_weight: 0.04   # 单股上限
+  mlf:
+    top_k_factors: 30      # ML选因子数
+    train_window: 1008     # 训练窗口(天)
+    retrain_freq: 21       # 重训练频率
+    max_industry_weight: 0.25  # 行业暴露上限
 
-# 风控升级：固定波动率 → managed_vol
-risk:
-  target_vol: 0.20        # 0.25 → 0.20
-  vol_trend_mode: managed_vol
-
-# 分配升级：等权 → HRP
-allocation:
-  method: hrp
-  lookback: 60
-
-# 因子扩展：3 → 7
-factors:
-  - mom_1m
-  - mom_3m
-  - mom_6m
-  - rev_5d        # 新增反转因子
-  - rev_20d
-  - vol_20d       # 新增波动率因子
-  - vol_60d
-
-# 股票池
 pools:
-  main:
-    - "600519.SH"
-    - "601318.SH"
-    # ...
+  stocks:
+    index: "000300.XSHG"   # 候选池指数
 
-data:
-  source: duckdb
-  data_root: "D:/Work/Project/download_a_share/data"
+factors:
+  - mom_1m                 # 因子列表(mlf用预计算因子，这里仅占位)
 ```
 
 ### config.yaml 关键字段
@@ -93,21 +130,273 @@ data:
 | 字段 | 说明 | 可选值 |
 |------|------|--------|
 | `backtest.start_date` / `end_date` | 回测区间 | 日期字符串 |
-| `selection.method` | 选股器 | icir/hybrid/momentum/adaptive_icir/ml/model/rl |
+| `selection.method` | 选股器 | icir/hybrid/momentum/mlf |
 | `selection.top_n` | 选股数量 | 整数 |
+| `selection.max_stock_weight` | 单股权重上限 | 0.02-0.05 |
 | `risk.target_vol` | 目标波动率 | 0.1-0.4 |
-| `risk.vol_trend_mode` | 波动率趋势模式 | managed_vol/固定 |
-| `allocation.method` | 分配方法 | equal/hrp/icir_weighted |
-| `rebalance.frequency` | 调仓频率 | daily/weekly/monthly/quarterly/adaptive |
+| `rebalance.frequency` | 调仓频率 | daily/weekly/monthly |
 | `rebalance.method` | 调仓方法 | cost_benefit/simple/none |
-| `rebalance.cost_model.name` | 成本模型 | stock_cn/etf_cn/mixed_cn |
-| `factors` | 因子列表 | 因子注册名 |
+| `pools.stocks.index` | 候选池指数代码 | 000300/000819/000905 等 |
 
-## 步骤 3：新增因子（如需）
+---
 
-参考 [factor_development.md](file:///d:/Work/Project/OhMyQuant/docs/factor_development.md)。在 [factors/builtin/](file:///d:/Work/Project/OhMyQuant/ohmyquant/factors/builtin/) 下新建 `.py` 文件，用 `@register_factor` 注册，然后在 config.yaml 的 `factors` 列表中引用。
+## 步骤 4：新增因子（如需）
 
-## 步骤 4：Walk-Forward 验证
+参考 [factor_development.md](file:///d:/Work/Project/OhMyQuant/docs/factor_development.md)。在 [factors/builtin/](file:///d:/Work/Project/OhMyQuant/ohmyquant/factors/builtin/) 下新建 `.py` 文件，用 `@register_factor` 注册。
+
+> mlf 策略使用 jqdata 预计算的 260 个因子，不需要此步骤。
+
+---
+
+## 步骤 5：IS 候选池对比
+
+> 用 IS 数据对比不同候选池，选择 IS 表现更优的池。**不要用 OOS 结果选池**。
+
+### 可用候选池
+
+| 指数代码 | 名称 | 股票数 | 类型 |
+|----------|------|--------|------|
+| 000016.XSHG | 上证50 | 50 | 超大盘 |
+| 000300.XSHG | 沪深300 | 300 | 大盘 |
+| 000905.XSHG | 中证500 | 500 | 中盘 |
+| 000819.XSHG | 中证800 | 800 | 大+中盘 |
+| 000852.XSHG | 中证1000 | 1000 | 小盘 |
+
+### 对比脚本
+
+参考 [mlf_is_pool_compare.py](file:///d:/Work/Project/OhMyQuant/scripts/mlf_is_pool_compare.py)：
+
+```python
+# IS 回测配置
+strategy.config.backtest.start_date = "2022-01-01"
+strategy.config.backtest.end_date = "2025-12-31"
+strategy.config.backtest.data_start_date = "2018-01-01"
+strategy.config.pools = {"stocks": {"index": "000300.XSHG"}}  # 改池子
+```
+
+### mlf 经验
+
+沪深300 IS Sharpe 0.18 > 中证800 IS Sharpe 0.16，且中证800导致 ML 选到周期股（OOS崩盘）。**大盘股池更稳定**。
+
+---
+
+## 步骤 6：IS 超参搜索
+
+> 用 IS 数据搜索超参，选择 IS 表现最优的配置。
+
+### 搜索方式
+
+**方式一：自定义网格搜索**（推荐，可控性强）
+
+参考 [mlf_is_gridsearch.py](file:///d:/Work/Project/OhMyQuant/scripts/mlf_is_gridsearch.py)：
+
+```python
+COMBOS = [
+    {"label": "n20_k30_ind25", "top_n": 20, "top_k": 30, "ind_cap": 0.25},
+    {"label": "n30_k25_ind20", "top_n": 30, "top_k": 25, "ind_cap": 0.20},
+    # ...
+]
+
+for combo in COMBOS:
+    strategy.config.selection.top_n = combo["top_n"]
+    strategy.config.selection.mlf["top_k_factors"] = combo["top_k"]
+    strategy.config.selection.mlf["max_industry_weight"] = combo["ind_cap"]
+    # 运行 IS 回测...
+```
+
+**方式二：ParamSearcher**（Optuna/网格自动搜索）
+
+```python
+from ohmyquant.optimization import ParamSearcher
+
+ps = ParamSearcher(n_trials=50, metric="sharpe")
+report = ps.search("mlf", "v9", {
+    "selection.top_n": {"type": "int", "low": 20, "high": 40, "step": 10},
+    "selection.mlf.top_k_factors": {"type": "int", "low": 20, "high": 30, "step": 5},
+})
+```
+
+### 搜索原则
+
+1. **只在 IS 上搜索** — OOS 数据不参与参数选择
+2. **组合数不宜过多** — IS 回测慢（mlf约15分钟/次），3-9个关键组合即可
+3. **避免过拟合** — 参数空间不宜过宽，围绕基线小幅调整
+
+---
+
+## 步骤 7：OOS 最终验证
+
+> 用 IS 选出的最优配置，在 OOS 期间回测。**只看结果，不调参数**。
+
+参考 [mlf_v8_oos.py](file:///d:/Work/Project/OhMyQuant/scripts/mlf_v8_oos.py)：
+
+```python
+# OOS 回测配置
+strategy.config.backtest.start_date = "2026-06-01"   # OOS 起点
+strategy.config.backtest.end_date = "2026-07-10"      # OOS 终点
+# 超参使用 IS 搜索的最优值，不再调整
+```
+
+### 验证标准
+
+| 检查项 | 通过标准 |
+|--------|----------|
+| OOS 收益为正 | total_return > 0 |
+| OOS Sharpe 合理 | sharpe > 0.5 (短期可更高) |
+| IS/OOS 一致性 | IS 最优 = OOS 最优 |
+| 无极端回撤 | max_drawdown > -15% |
+
+**如果 OOS 表现极差**: 说明 IS 搜索过拟合，需减少参数组合数或缩小搜索范围。
+
+---
+
+## 步骤 8：持仓分析
+
+分析建仓/调仓的持仓明细、行业分布、换手率。
+
+参考 [mlf_position_analysis.py](file:///d:/Work/Project/OhMyQuant/scripts/mlf_position_analysis.py)：
+
+```python
+# 分析内容
+- 股票只数、总权重、权重范围
+- 行业分布（各行业权重占比）
+- 换手率（调仓新增/剔除股票数）
+- 单股权重分布
+```
+
+### 分析要点
+
+| 检查项 | 关注点 |
+|--------|--------|
+| 行业集中度 | 单行业占比是否过高 (>40%需关注) |
+| 换手率 | 月度换手是否合理 (0-30%正常) |
+| 权重分布 | 是否有股权重过大 (>5%需关注) |
+| 总仓位 | 是否有大量现金 (>20%需关注) |
+
+---
+
+## 步骤 9：策略对比
+
+用 [StrategyComparator](file:///d:/Work/Project/OhMyQuant/ohmyquant/analysis/compare.py) 对比 v_prev vs v_new：
+
+```python
+from ohmyquant.strategy import StrategyRunner
+from ohmyquant.analysis import StrategyComparator
+
+r1 = StrategyRunner.run_strategy("mlf", "v5")
+r2 = StrategyRunner.run_strategy("mlf", "v8")
+
+comparator = StrategyComparator({
+    "v5": r1.backtest_result.daily_returns.to_numpy(),
+    "v8": r2.backtest_result.daily_returns.to_numpy(),
+})
+print(comparator.get_comparison_table())
+print(comparator.rank_strategies(metric="sharpe_ratio"))
+```
+
+### 对比维度
+
+| 维度 | 说明 |
+|------|------|
+| 总收益/年化收益 | 绝对回报 |
+| Sharpe/Calmar | 风险调整回报 |
+| 最大回撤 | 极端风险 |
+| 胜率 | 盈利稳定性 |
+| IS vs OOS | 是否一致 |
+
+---
+
+## 步骤 10：文档更新
+
+### 10.1 更新策略报告
+
+编辑 [docs/mlf_strategy_report.md](file:///d:/Work/Project/OhMyQuant/docs/mlf_strategy_report.md)：
+
+1. 更新顶部 final 版本信息
+2. 在版本历史表（2.2节）添加新版本行
+3. 在 IS 验证表（2.4节）添加新组合结果
+4. 更新迭代思路（第3节）
+
+### 10.2 更新总结文档
+
+编辑 [docs/mlf_strategy_summary.md](file:///d:/Work/Project/OhMyQuant/docs/mlf_strategy_summary.md)：
+
+1. 更新迭代路线图
+2. 更新核心指标对比表
+3. 更新最终配置表
+
+### 文档命名规范
+
+| 文档 | 命名 | 内容 |
+|------|------|------|
+| 详细报告 | `{strategy}_strategy_report.md` | 完整迭代记录 |
+| 总结文档 | `{strategy}_strategy_summary.md` | 一页纸概览 |
+
+---
+
+## 步骤 11：归档旧版本 + Git 提交
+
+### 11.1 归档旧版本
+
+```bash
+# 归档非 final 的旧版本
+mv ohmyquant/strategy/strategies/mlf/v_old archive/strategies/mlf/v_old
+
+# 归档旧脚本
+mv scripts/mlf_v_old_oos.py archive/scripts/mlf_v_old_oos.py
+```
+
+**保留规则**: 主目录只保留当前 final 和前一版 final（用于对比）。
+
+### 11.2 Git 提交
+
+```bash
+git add -A
+git commit -m "feat: add mlf_v9 strategy (IS+OOS validated)" \
+           -m "v9 config: n20_k30_ind25, IS Sharpe 0.52, OOS Sharpe 5.39"
+```
+
+### Commit message 规范
+
+| 前缀 | 用途 |
+|------|------|
+| `feat:` | 新策略版本/新功能 |
+| `fix:` | 修复 bug |
+| `refactor:` | 代码重构/归档 |
+| `docs:` | 文档更新 |
+
+---
+
+## 步骤 12：收敛判断
+
+### 策略收敛标准
+
+| 标准 | 说明 |
+|------|------|
+| IS 最优 = OOS 最优 | 同一配置在 IS 和 OOS 都最优 |
+| IS Sharpe > 0.3 | 样本内表现合理 |
+| OOS 收益为正 | 样本外验证通过 |
+| 无过拟合迹象 | 参数组合数合理，IS/OOS 一致 |
+
+### 收敛后操作
+
+1. 在策略 `strategy.py` 的 docstring 标注 `final`
+2. 在报告版本历史表标注 `**final**`
+3. 在总结文档更新"当前最终版本"
+4. 归档所有非 final 旧版本
+5. Git 提交
+
+### 未收敛时
+
+如果 OOS 表现差或 IS/OOS 不一致：
+- 减少参数组合数（降低过拟合风险）
+- 检查候选池是否合适
+- 检查是否有前视偏差
+- 考虑策略思路是否需要调整
+
+---
+
+## 附：Walk-Forward 验证（可选）
 
 用 [StrategyWalkForward](file:///d:/Work/Project/OhMyQuant/ohmyquant/optimization/walk_forward.py) 评估策略跨周期稳定性：
 
@@ -115,142 +404,26 @@ data:
 from ohmyquant.optimization import StrategyWalkForward
 
 wf = StrategyWalkForward(test_window="1Y", step="1Y")
-report = wf.run("ycj", "v2")
+report = wf.run("mlf", "v8")
 print(report.summary())
 ```
 
-输出示例：
-```
-============================================================
-Walk-Forward 报告: ycj v2
-窗口规格: test=1Y, step=1Y
-窗口数: 9
-------------------------------------------------------------
-平均 Sharpe:          1.2345  (std=0.4567)
-平均年化收益:         15.23%  (std=8.45%)
-正 Sharpe 窗口:       7/9  (consistency=77.8%)
-------------------------------------------------------------
-各窗口明细:
-  [0] 2015-01-05~2015-12-31 (243d) nav=1.1234 sharpe=0.89 ann_ret=12.34% max_dd=-8.45%
-  [1] 2016-01-04~2016-12-30 (244d) nav=0.9876 sharpe=-0.23 ann_ret=-1.24% max_dd=-12.34%
-  ...
-============================================================
-```
+**评判标准**: consistency > 60% 且 mean_sharpe > 0.5 为可接受。
 
-**评判标准**：consistency > 60% 且 mean_sharpe > 0.5 为可接受。
+---
 
-### 窗口规格
+## 附：策略集成（可选）
 
-| 规格 | 含义 | 交易日 |
-|------|------|--------|
-| `"1Y"` | 1 年 | 252 |
-| `"6M"` | 半年 | 126 |
-| `"3M"` | 季度 | 63 |
-| `"63D"` | 63 天 | 63 |
-| 整数 | 直接指定天数 | N |
-
-## 步骤 5：参数搜索
-
-用 [ParamSearcher](file:///d:/Work/Project/OhMyQuant/ohmyquant/optimization/param_search.py) 搜索最优超参（自动使用 Optuna，未安装时降级为网格搜索）：
-
-```python
-from ohmyquant.optimization import ParamSearcher
-
-ps = ParamSearcher(n_trials=50, metric="sharpe")
-report = ps.search("ycj", "v2", {
-    "selection.top_n": {"type": "int", "low": 30, "high": 100, "step": 10},
-    "risk.target_vol": {"type": "float", "low": 0.15, "high": 0.30, "step": 0.05},
-    "rebalance.frequency": {"type": "categorical", "choices": ["monthly", "weekly"]},
-})
-print(report.summary())
-print(f"最优参数: {report.best_params}")
-```
-
-### 参数空间规格
-
-```python
-# 整数
-"selection.top_n": {"type": "int", "low": 20, "high": 100, "step": 10}
-
-# 浮点数
-"risk.target_vol": {"type": "float", "low": 0.1, "high": 0.4, "step": 0.05}
-
-# 对数尺度浮点
-"model.learning_rate": {"type": "float", "low": 0.001, "high": 0.1, "log": True}
-
-# 分类
-"rebalance.frequency": {"type": "categorical", "choices": ["monthly", "weekly", "daily"]}
-```
-
-参数路径用点号分隔（如 `selection.top_n`），会自动深合并到策略 yaml 基础配置。
-
-## 步骤 6：策略对比
-
-用 [StrategyComparator](file:///d:/Work/Project/OhMyQuant/ohmyquant/analysis/compare.py) 对比 v1 vs v2：
-
-```python
-import numpy as np
-from ohmyquant.strategy import StrategyRunner
-from ohmyquant.analysis import StrategyComparator
-
-# 运行两个策略
-r1 = StrategyRunner.run_strategy("ycj", "v1")
-r2 = StrategyRunner.run_strategy("ycj", "v2")
-
-# 对比
-comparator = StrategyComparator({
-    "ycj_v1": r1.backtest_result.daily_returns.to_numpy(),
-    "ycj_v2": r2.backtest_result.daily_returns.to_numpy(),
-})
-
-# 指标对比表
-print(comparator.get_comparison_table())
-
-# 相关性矩阵
-print(comparator.compute_correlation_matrix())
-
-# 排名
-print(comparator.rank_strategies(metric="sharpe_ratio"))
-```
-
-详细用法参考 [strategy_comparison.md](file:///d:/Work/Project/OhMyQuant/docs/strategy_comparison.md)。
-
-## 步骤 7：策略集成
-
-用 [StrategyEnsemble](file:///d:/Work/Project/OhMyQuant/ohmyquant/optimization/ensemble.py) 将多个策略组合：
+用 [StrategyEnsemble](file:///d:/Work/Project/OhMyQuant/ohmyquant/optimization/ensemble.py) 组合多策略：
 
 ```python
 from ohmyquant.optimization import StrategyEnsemble
 
 ens = StrategyEnsemble(weighting="perf_weight")
-ens.add_strategy("ycj", "v2")
+ens.add_strategy("mlf", "v8")
 ens.add_strategy("etf", "v1")
-
 result = ens.run()
-print(f"集成 Sharpe: {result.metrics.sharpe_ratio:.4f}")
-print(f"成分权重: {[(c['strategy_type'], c['weight']) for c in result.constituents]}")
 ```
-
-### 加权方式
-
-| 方式 | 说明 |
-|------|------|
-| `equal` | 等权 1/N |
-| `perf_weight` | 按 Sharpe 加权（w_i ∝ max(sharpe_i, 0)） |
-| `ir_weight` | 按信息比率加权（需 benchmark_returns） |
-
-## 迭代版本（子版本）
-
-如果不想新建主版本，可以创建迭代版本（如 v2.1）：
-
-```
-strategies/ycj/v2/iterations/v2_1/
-  ├── __init__.py
-  ├── config.yaml
-  └── strategy.py
-```
-
-运行时用 `StrategyRunner.run_strategy("ycj", "v2.1")`。
 
 ---
 
@@ -258,33 +431,35 @@ strategies/ycj/v2/iterations/v2_1/
 
 ```bash
 # 运行策略
-omq run ycj v2
+omq run mlf v8
 
 # 列出策略
 omq list strategies
 
 # Walk-Forward
-omq optimize walk-forward ycj v2 --window 1Y --step 1Y
+omq optimize walk-forward mlf v8 --window 1Y --step 1Y
 
 # 参数搜索
-omq optimize param-search ycj v2 --params '{"selection.top_n": {"type": "int", "low": 30, "high": 80, "step": 10}}'
+omq optimize param-search mlf v8 --params '{"selection.top_n": {"type": "int", "low": 20, "high": 40, "step": 10}}'
 
 # 策略对比
-omq compare output/v1_results.json output/v2_results.json --report output/comparison.html
+omq compare output/v5_results.json output/v8_results.json --report output/comparison.html
 ```
+
+---
 
 ## 最佳实践
 
-1. **渐进迭代**：每次只改一个维度（选股/因子/风控），对比效果后再叠加。
-2. **样本外验证**：Walk-Forward 的 consistency 比全周期 Sharpe 更重要。
-3. **避免过拟合**：参数搜索的 n_trials 不宜过大，参数空间不宜过宽。
-4. **成本意识**：调仓频率提升会增加成本，用 `cost_benefit` 调仓器自动权衡。
-5. **命名约定**：
-   - 人工策略命名 `dh` (DH_strategy)
-   - 量化策略命名 `ycj` (YCJ_strategy)
-   - ML选因子策略命名 `mlf` (Machine Learning Factor selection)
-   - 所有文件/目录/代码中统一
+1. **IS/OOS 严格划分** — 所有参数选择基于 IS，OOS 仅验证（防前视偏差）
+2. **渐进迭代** — 每次只改一个维度（选股/因子/风控），对比效果后再叠加
+3. **大盘股池优先** — 沪深300比中证800更稳定（mlf经验）
+4. **避免过拟合** — 参数组合数不超过9个，围绕基线小幅调整
+5. **成本意识** — 调仓频率提升会增加成本，用 `cost_benefit` 调仓器自动权衡
+6. **及时归档** — 非 final 版本及时移至 archive/，主目录只保留2个版本
+7. **文档同步** — 每次迭代后更新报告和总结，确保可复现
+8. **命名约定**:
+   - ML选因子策略: `mlf` (Machine Learning Factor selection)
    - 版本号 `v1`, `v2`... 标注主迭代
-   - 超参标签写入 description (如 `k25_w1008`)
+   - 超参标签写入 description (如 `k30_w1008_csi300_n20_ind25`)
    - 收敛后标注 `final` 状态
-   - 详见 [mlf_v2_strategy_report.md](file:///d:/Work/Project/OhMyQuant/docs/mlf_v2_strategy_report.md) 第2节
+   - 详见 [mlf_strategy_report.md](file:///d:/Work/Project/OhMyQuant/docs/mlf_strategy_report.md) 第2节
