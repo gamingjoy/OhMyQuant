@@ -21,6 +21,21 @@ from .version_manager import VersionManager
 logger = get_logger(__name__)
 
 
+def _deep_merge(base: dict, override: dict) -> dict:
+    """深度合并两个 dict，override 中的值覆盖 base 中的同名键。
+
+    对于嵌套 dict，递归合并而非整体替换。
+    非 dict 值直接覆盖。
+    """
+    result = dict(base)
+    for key, val in override.items():
+        if key in result and isinstance(result[key], dict) and isinstance(val, dict):
+            result[key] = _deep_merge(result[key], val)
+        else:
+            result[key] = val
+    return result
+
+
 class StrategyRegistry:
     """策略注册表
 
@@ -83,7 +98,7 @@ class StrategyRegistry:
         Args:
             strategy_type: 策略类型（ycj/dh）
             version: 版本号（v1/v2）
-            config: 运行时配置覆盖
+            config: 运行时配置覆盖（深度合并到基础配置）
 
         Returns:
             BaseStrategy: 策略实例
@@ -93,9 +108,9 @@ class StrategyRegistry:
         # 加载基础配置
         base_config = VersionManager.load_config(strategy_type, version)
 
-        # 合并配置
+        # 深度合并配置（避免浅合并覆盖整个子配置段）
         if config:
-            base_config.update(config)
+            base_config = _deep_merge(base_config, config)
 
         return strategy_class(base_config)
 
