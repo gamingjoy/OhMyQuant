@@ -1,0 +1,62 @@
+# 行业轮动策略 v3 配置（大盘过滤+长期动量+regime风控）
+#
+# v2 问题：回撤大(-30.6%)，无大盘趋势过滤
+# v3 改进：大盘均线过滤 + 60+120日长期动量 + regime_adaptive风控
+
+strategy_type: industry_rotation
+strategy_version: v3
+strategy_name: "行业轮动策略 v3"
+description: "大盘过滤+长期动量：60+120日动量,Top5行业×2股,沪深300,大盘均线过滤,regime风控"
+
+backtest:
+  start_date: "2022-01-01"
+  end_date: "2025-12-31"
+  data_start_date: "2018-01-01"
+  transaction_cost: 0.001
+
+selection:
+  method: industry_rotation
+  top_n: 10
+  max_stock_weight: 0.10
+  industry_rotation:
+    data_root: "D:/Work/Project/download_a_share/data"
+    top_industries: 5
+    stocks_per_industry: 2
+    momentum_short: 60
+    momentum_long: 120
+    weight_short: 0.6
+    weight_long: 0.4
+    max_industry_weight: 0.30
+    market_filter: true
+    market_index: "000300.XSHG"
+    market_ma_short: 20
+    market_ma_long: 60
+
+portfolio:
+  max_stock_weight: 0.10
+  max_industry_weight: 0.30
+  min_stocks: 5
+
+risk:
+  method: regime_adaptive
+  target_vol: 0.18
+  lookback: 20
+  min_exposure_scale: 0.3
+
+rebalance:
+  frequency: weekly
+  weekday: 0
+  method: cost_benefit
+  cost_model:
+    name: stock_cn
+
+factors:
+  - mom_1m
+
+pools:
+  stocks:
+    index: "000300.XSHG"
+
+data:
+  source: duckdb
+  data_root: "D:/Work/Project/download_a_share/data"

@@ -458,10 +458,10 @@ omq compare output/v5_results.json output/v8_results.json --report output/compar
 6. **及时归档** — 非 final 版本及时移至 archive/，主目录只保留2个版本
 7. **文档同步** — 每次迭代后更新报告和总结，确保可复现
 8. **命名约定** (统一规范):
-   - **代码标识**: `{type}_{version}` (如 `ind_v5`, `mlf_v8`)
-     - `type` 为简短英文缩写: `ind`(行业轮动), `mlf`(ML选因子)...
+   - **代码标识**: `{type}_{version}` (如 `industry_rotation_v5`, `mlf_v8`)
+     - `type` 为简短英文缩写: `industry_rotation`(行业轮动), `mlf`(ML选因子)...
      - `version` 标注主迭代: `v1`, `v2`...
-   - **完整名**: `{type}_{version} ({超参标签}, {状态})` (如 `ind_v5 (mf10_mom60_120_mkt20, final)`)
+   - **完整名**: `{type}_{version} ({超参标签}, {状态})` (如 `industry_rotation_v5 (mf10_mom60_120_mkt20, final)`)
      - 超参标签: 核心超参缩写 (如 `mf10`=10因子, `mom60_120`=60/120日动量, `mkt20`=大盘20日过滤)
      - 状态标记: `final`(已收敛) / `iter`(迭代中) / `abandoned`(已放弃)
    - **目录与文件命名** (所有位置统一用代码标识):
