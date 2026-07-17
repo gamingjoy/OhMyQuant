@@ -234,7 +234,7 @@ class IndustryRotationSelector(BaseSelector):
         if not factor_scores:
             return {}
 
-        # 加权求和
+        # 加权求和（支持负权重实现反向因子：weight_sum 用 abs(w) 归一化）
         for code in stock_codes:
             total = 0.0
             weight_sum = 0.0
@@ -242,7 +242,7 @@ class IndustryRotationSelector(BaseSelector):
                 if code in code_scores:
                     w = self.factor_weights.get(factor_name, 1.0)
                     total += w * code_scores[code]
-                    weight_sum += w
+                    weight_sum += abs(w)
             if weight_sum > 0:
                 scores[code] = total / weight_sum
 

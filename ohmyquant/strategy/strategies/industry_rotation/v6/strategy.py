@@ -1,17 +1,18 @@
-"""行业轮动策略 v5（多因子选股+聚宽260因子）
+"""行业轮动策略 v6（低beta因子增强）
 
-v4 问题：个股层仅用价格动量，忽略聚宽260因子数据
-v5 改进：
-  - 个股层改用多因子复合评分（动量+成交量+质量+价值，共10因子）
-  - 行业层保持60+120日动量排名（v4已验证有效）
-  - 大盘过滤 ma_long=20（网格搜索最优）
-  - 充分利用聚宽260因子数据
+v5 问题：OOS分析发现持仓股票 beta 过高（1.44），下跌市回撤大于沪深300
+v6 改进：
+  - 在 v5 的10因子基础上加入2个反向风险因子：
+    - raw_beta（反向，w=-1.5）：直接降低持仓 beta
+    - residual_volatility（反向，w=-1.0）：BARRA残差波动率
+  - 其他配置与 v5 完全相同
 
 因子组合:
   动量(3): Price1M, Price3M, ROC20
   成交量(2): DAVOL10, money_flow_20
   质量(3): gross_income_ratio, roe_ttm, net_profit_ratio
   价值(2): earnings_to_price_ratio, book_to_price_ratio
+  风险(2): raw_beta(反向), residual_volatility(反向)
 """
 from __future__ import annotations
 
@@ -19,22 +20,22 @@ from ohmyquant.strategy import register_strategy
 from ohmyquant.strategy.base import BaseStrategy
 
 
-@register_strategy("industry_rotation", "v5")
-class IndustryRotationStrategyV5(BaseStrategy):
-    """行业轮动策略 industry_rotation_v5 (mf10_mom60_120_mkt20, superseded)"""
+@register_strategy("industry_rotation", "v6")
+class IndustryRotationStrategyV6(BaseStrategy):
+    """行业轮动策略 industry_rotation_v6 (mf12_lowbeta_mom60_120_mkt20, final)"""
 
     @classmethod
     def from_version(
         cls, strategy_type: str, version: str, config: dict | None = None
-    ) -> "IndustryRotationStrategyV5":
-        if strategy_type != "industry_rotation" or version != "v5":
+    ) -> "IndustryRotationStrategyV6":
+        if strategy_type != "industry_rotation" or version != "v6":
             raise ValueError(f"不支持的策略版本: {strategy_type} {version}")
 
         base_config = {
             "strategy_type": "industry_rotation",
-            "strategy_version": "v5",
-            "strategy_name": "行业轮动策略 industry_rotation_v5 (mf10_mom60_120_mkt20, superseded)",
-            "description": "多因子选股:10因子+60/120日行业动量+大盘20日过滤+沪深300 [superseded by v6]",
+            "strategy_version": "v6",
+            "strategy_name": "行业轮动策略 industry_rotation_v6 (mf12_lowbeta_mom60_120_mkt20, final)",
+            "description": "低beta因子增强:12因子(含2反向风险)+60/120日行业动量+大盘20日过滤+沪深300 [final]",
             "backtest": {
                 "start_date": "2022-01-01",
                 "end_date": "2025-12-31",
@@ -64,6 +65,7 @@ class IndustryRotationStrategyV5(BaseStrategy):
                         "DAVOL10", "money_flow_20",
                         "gross_income_ratio", "roe_ttm", "net_profit_ratio",
                         "earnings_to_price_ratio", "book_to_price_ratio",
+                        "raw_beta", "residual_volatility",
                     ],
                     "factor_weights": {
                         "Price1M": 1.0, "Price3M": 1.0, "ROC20": 1.0,
@@ -72,6 +74,8 @@ class IndustryRotationStrategyV5(BaseStrategy):
                         "net_profit_ratio": 1.0,
                         "earnings_to_price_ratio": 1.0,
                         "book_to_price_ratio": 1.0,
+                        "raw_beta": -1.5,
+                        "residual_volatility": -1.0,
                     },
                 },
             },

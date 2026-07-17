@@ -27,7 +27,6 @@ from industry_rotation_daily import (
 from ohmyquant.data.sources.duckdb_source import DuckDBSource
 
 DATA_ROOT = "D:/Work/Project/download_a_share/data"
-OOS_END = "2026-07-13"  # 最后一个调仓日
 
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
@@ -36,8 +35,10 @@ logger = logging.getLogger(__name__)
 def main():
     source = DuckDBSource({"data_root": DATA_ROOT})
 
-    print(f"运行 OOS 回测: → {OOS_END}")
-    result = run_oos_backtest(OOS_END)
+    # 动态获取最新数据日期作为回测终止日
+    oos_end = source.get_latest_date()
+    print(f"运行 OOS 回测: → {oos_end}")
+    result = run_oos_backtest(oos_end)
     rebalance_log = result["rebalance_log"]
 
     print(f"\n调仓日数量: {len(rebalance_log)}")

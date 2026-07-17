@@ -434,7 +434,10 @@ class RegimeAdaptiveRiskManager(BaseRiskManager):
 
         # 6. 综合
         effective_scale = vol_scale * base_exposure * proactive_scale
-        effective_scale = float(np.clip(effective_scale, 0.15, 1.5))
+        # 下限使用配置的 min_exposure_scale（允许更深减仓），上限 1.5
+        effective_scale = float(
+            np.clip(effective_scale, self.min_exposure_scale, 1.5)
+        )
 
         return effective_scale, regime
 

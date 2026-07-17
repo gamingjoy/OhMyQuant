@@ -319,7 +319,7 @@ print(comparator.rank_strategies(metric="sharpe_ratio"))
 
 ### 10.1 更新策略报告
 
-编辑 [docs/industry_rotation_v5_strategy_report.md](file:///d:/Work/Project/OhMyQuant/docs/industry_rotation_v5_strategy_report.md)：
+编辑 [docs/industry_rotation_v6_strategy_report.md](file:///d:/Work/Project/OhMyQuant/docs/industry_rotation_v6_strategy_report.md)：
 
 1. 更新顶部 final 版本信息
 2. 在版本历史表（2.2节）添加新版本行
@@ -461,8 +461,8 @@ omq compare output/v4_results.json output/v5_results.json --report output/compar
    - **代码标识**: `{type}_{version}` (如 `industry_rotation_v5`)
      - `type` 为简短英文缩写: `industry_rotation`(行业轮动)...
      - `version` 标注主迭代: `v1`, `v2`...
-   - **完整名**: `{type}_{version} ({超参标签}, {状态})` (如 `industry_rotation_v5 (mf10_mom60_120_mkt20, final)`)
-     - 超参标签: 核心超参缩写 (如 `mf10`=10因子, `mom60_120`=60/120日动量, `mkt20`=大盘20日过滤)
+   - **完整名**: `{type}_{version} ({超参标签}, {状态})` (如 `industry_rotation_v6 (mf12_lowbeta_mom60_120_mkt20, final)`)
+     - 超参标签: 核心超参缩写 (如 `mf12`=12因子, `lowbeta`=含反向beta因子, `mom60_120`=60/120日动量, `mkt20`=大盘20日过滤)
      - 状态标记: `final`(已收敛) / `iter`(迭代中) / `abandoned`(已放弃)
    - **目录与文件命名** (所有位置统一用代码标识):
      - 策略代码: `ohmyquant/strategy/strategies/{type}/{version}/`

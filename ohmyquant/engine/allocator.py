@@ -93,7 +93,7 @@ class BaseAllocator(ABC):
 
         Args:
             dates: 日期列表（"YYYY-MM-DD" 格式字符串 或 datetime.date 对象）
-            freq: 调仓频率 daily / weekly / monthly / quarterly
+            freq: 调仓频率 daily / weekly / biweekly / monthly / quarterly
             weekday: 周频率时的星期几（0=周一 ... 4=周五）
 
         Returns:
@@ -107,6 +107,10 @@ class BaseAllocator(ABC):
 
         rebal_dates: set = set()
         prev_key = None
+        # biweekly 隔周调仓：触发周内命中 weekday 调仓，无 weekday 时取首日兜底
+        biweekly_trigger = False
+        biweekly_pending = None
+        biweekly_week_done = False
 
         for date_item in dates:
             # 转换为 datetime 对象
@@ -128,6 +132,32 @@ class BaseAllocator(ABC):
                     # 如果指定的 weekday 不存在，取该周第一个交易日
                     rebal_dates.add(date_item)
                     prev_key = key
+            elif freq == "biweekly":
+                # 隔周调仓：每两周的指定 weekday 调仓一次
+                iso = dt.isocalendar()
+                key = (iso[0], iso[1])
+                if key != prev_key:
+                    # 新的一周：先提交上一触发周的兜底日期（若未命中 weekday）
+                    # biweekly_trigger 此时仍是上一周的状态
+                    if (
+                        biweekly_trigger
+                        and biweekly_pending is not None
+                        and not biweekly_week_done
+                    ):
+                        rebal_dates.add(biweekly_pending)
+                    biweekly_pending = None
+                    biweekly_week_done = False
+                    # 翻转触发标志
+                    biweekly_trigger = not biweekly_trigger
+                    prev_key = key
+                if biweekly_trigger and not biweekly_week_done:
+                    if dt.weekday() == weekday:
+                        rebal_dates.add(date_item)
+                        biweekly_week_done = True
+                        biweekly_pending = None
+                    elif biweekly_pending is None:
+                        # 记录本周首个交易日作为兜底
+                        biweekly_pending = date_item
             elif freq == "monthly":
                 key = (dt.year, dt.month)
                 if key != prev_key:
@@ -145,6 +175,10 @@ class BaseAllocator(ABC):
                 if key != prev_key:
                     rebal_dates.add(date_item)
                     prev_key = key
+
+        # 提交最后一周的兜底
+        if biweekly_trigger and biweekly_pending is not None and not biweekly_week_done:
+            rebal_dates.add(biweekly_pending)
 
         return rebal_dates
 
