@@ -75,6 +75,12 @@ class IndustryRotationSelector(BaseSelector):
         self.weight_short: float = ir_cfg.get("weight_short", 0.6)
         self.weight_long: float = ir_cfg.get("weight_long", 0.4)
         self.max_industry_weight: float = ir_cfg.get("max_industry_weight", 0.30)
+        # 行业短期风险过滤：剔除近期下跌的行业（规避高风险板块）
+        self.industry_risk_filter: bool = ir_cfg.get("industry_risk_filter", False)
+        self.risk_filter_window: int = ir_cfg.get("risk_filter_window", 20)
+        self.risk_filter_min_industries: int = ir_cfg.get(
+            "risk_filter_min_industries", 3
+        )
         # 大盘趋势过滤
         self.market_filter: bool = ir_cfg.get("market_filter", False)
         self.market_index: str = ir_cfg.get("market_index", "000300.XSHG")
@@ -621,6 +627,41 @@ class IndustryRotationSelector(BaseSelector):
 
         if not top_industries:
             return None
+
+        # 行业短期风险过滤：剔除近期下跌的行业（规避高风险板块）
+        # 当行业中长期动量仍为正但短期已转负时，及时退出
+        if self.industry_risk_filter and self.risk_filter_window > 0:
+            mom_risk = close_numeric / close_numeric.shift(
+                self.risk_filter_window
+            ) - 1
+            if select_idx < len(mom_risk):
+                risk_row = mom_risk.row(select_idx, named=True)
+                # 计算每个选中行业的短期动量
+                industry_risk_mom: dict[str, float] = {}
+                for ind in top_industries:
+                    vals = []
+                    for code in industry_stocks[ind]:
+                        v = risk_row.get(code)
+                        if isinstance(v, (int, float)) and not np.isnan(v):
+                            vals.append(float(v))
+                    industry_risk_mom[ind] = float(np.mean(vals)) if vals else 0.0
+                # 过滤：仅保留短期动量非负的行业
+                filtered = [
+                    ind for ind in top_industries
+                    if industry_risk_mom.get(ind, 0) >= 0
+                ]
+                # 确保至少保留 risk_filter_min_industries 个行业
+                if len(filtered) < self.risk_filter_min_industries:
+                    filtered = top_industries[: self.risk_filter_min_industries]
+                removed = set(top_industries) - set(filtered)
+                if removed:
+                    logger.info(
+                        f"行业风险过滤({self.risk_filter_window}日): "
+                        f"剔除{len(removed)}个下跌行业 "
+                        f"{[r for r in removed]}，"
+                        f"保留{len(filtered)}/{self.top_industries}"
+                    )
+                top_industries = filtered
 
         # 每个选中行业选 Top-M 只股票
         # use_ml=true: 按ML预测收益排序

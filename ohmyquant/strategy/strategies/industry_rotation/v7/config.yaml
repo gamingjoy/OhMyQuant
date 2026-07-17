@@ -1,8 +1,8 @@
-# 行业轮动策略 v6 配置（低beta因子增强, superseded by v7）
+# 行业轮动策略 v7 配置（行业短期风险过滤+严控风险, final）
 strategy_type: industry_rotation
-strategy_version: v6
-strategy_name: "行业轮动策略 industry_rotation_v6 (mf12_lowbeta_mom60_120_mkt20, superseded)"
-description: "低beta因子增强:12因子(含2反向风险)+60/120日行业动量+大盘20日过滤+沪深300 [superseded by v7]"
+strategy_version: v7
+strategy_name: "行业轮动策略 industry_rotation_v7 (mf12_lowbeta_riskfilter20_mkt5, final)"
+description: "行业风险过滤+严控风险:12因子(含2反向风险)+20日行业风险过滤+大盘5/20日+沪深300 [final]"
 
 backtest:
   start_date: "2022-01-01"
@@ -22,11 +22,15 @@ selection:
     momentum_long: 120
     weight_short: 0.6
     weight_long: 0.4
-    max_industry_weight: 0.30
+    max_industry_weight: 0.25
     market_filter: true
     market_index: "000300.XSHG"
-    market_ma_short: 10
+    market_ma_short: 5
     market_ma_long: 20
+    # 行业短期风险过滤：剔除20日内下跌的行业
+    industry_risk_filter: true
+    risk_filter_window: 20
+    risk_filter_min_industries: 3
     use_factors: true
     factor_names:
       - Price1M
@@ -52,12 +56,12 @@ selection:
       net_profit_ratio: 1.0
       earnings_to_price_ratio: 1.0
       book_to_price_ratio: 1.0
-      raw_beta: -1.5
-      residual_volatility: -1.0
+      raw_beta: -2.0
+      residual_volatility: -1.5
 
 portfolio:
   max_stock_weight: 0.10
-  max_industry_weight: 0.30
+  max_industry_weight: 0.25
   min_stocks: 5
 
 risk:

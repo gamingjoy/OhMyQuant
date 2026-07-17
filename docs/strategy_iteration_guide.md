@@ -74,20 +74,20 @@ strategy.config.backtest.data_start_date = "2018-01-01"  # 训练数据不变
 ## 步骤 2：复制策略目录
 
 ```bash
-# 从 industry_rotation/v5 复制到 industry_rotation/v6
-Copy-Item -Recurse ohmyquant/strategy/strategies/industry_rotation/v5 ohmyquant/strategy/strategies/industry_rotation/v6
+# 从 industry_rotation/v6 复制到 industry_rotation/v7
+Copy-Item -Recurse ohmyquant/strategy/strategies/industry_rotation/v6 ohmyquant/strategy/strategies/industry_rotation/v7
 ```
 
 修改 `strategy.py` 中的注册信息：
 
 ```python
-@register_strategy("industry_rotation", "v6")           # 改版本号
-class IndustryRotationStrategyV6(BaseStrategy):          # 改类名
+@register_strategy("industry_rotation", "v7")           # 改版本号
+class IndustryRotationStrategyV7(BaseStrategy):          # 改类名
     # ...
     def from_version(cls, strategy_type, version, config=None):
         base_config = {
             "strategy_type": "industry_rotation",
-            "strategy_version": "v6",       # 改版本号
+            "strategy_version": "v7",       # 改版本号
             # ...
         }
 ```
@@ -95,16 +95,16 @@ class IndustryRotationStrategyV6(BaseStrategy):          # 改类名
 同时修改 `__init__.py`：
 
 ```python
-"""行业轮动策略 v6"""
-from .strategy import IndustryRotationStrategyV6
-__all__ = ["IndustryRotationStrategyV6"]
+"""行业轮动策略 v7"""
+from .strategy import IndustryRotationStrategyV7
+__all__ = ["IndustryRotationStrategyV7"]
 ```
 
 ---
 
 ## 步骤 3：编辑 config.yaml
 
-以 industry_rotation/v5 为例，参考 [industry_rotation/v5/config.yaml](file:///d:/Work/Project/OhMyQuant/ohmyquant/strategy/strategies/industry_rotation/v5/config.yaml)：
+以 industry_rotation/v6 为例，参考 [industry_rotation/v6/config.yaml](file:///d:/Work/Project/OhMyQuant/ohmyquant/strategy/strategies/industry_rotation/v6/config.yaml)：
 
 ```yaml
 selection:
@@ -218,7 +218,7 @@ for combo in COMBOS:
 from ohmyquant.optimization import ParamSearcher
 
 ps = ParamSearcher(n_trials=50, metric="sharpe")
-report = ps.search("industry_rotation", "v6", {
+report = ps.search("industry_rotation", "v7", {
     "selection.top_n": {"type": "int", "low": 10, "high": 20, "step": 5},
     "selection.industry_rotation.top_industries": {"type": "int", "low": 3, "high": 6, "step": 1},
     "selection.industry_rotation.momentum_long": {"type": "int", "low": 60, "high": 120, "step": 30},
@@ -292,12 +292,12 @@ strategy.config.backtest.end_date = "2026-07-10"      # OOS 终点
 from ohmyquant.strategy import StrategyRunner
 from ohmyquant.analysis import StrategyComparator
 
-r1 = StrategyRunner.run_strategy("industry_rotation", "v4")
-r2 = StrategyRunner.run_strategy("industry_rotation", "v5")
+r1 = StrategyRunner.run_strategy("industry_rotation", "v6")
+r2 = StrategyRunner.run_strategy("industry_rotation", "v7")
 
 comparator = StrategyComparator({
-    "v4": r1.backtest_result.daily_returns.to_numpy(),
-    "v5": r2.backtest_result.daily_returns.to_numpy(),
+    "v6": r1.backtest_result.daily_returns.to_numpy(),
+    "v7": r2.backtest_result.daily_returns.to_numpy(),
 })
 print(comparator.get_comparison_table())
 print(comparator.rank_strategies(metric="sharpe_ratio"))
@@ -319,7 +319,7 @@ print(comparator.rank_strategies(metric="sharpe_ratio"))
 
 ### 10.1 更新策略报告
 
-编辑 [docs/industry_rotation_v6_strategy_report.md](file:///d:/Work/Project/OhMyQuant/docs/industry_rotation_v6_strategy_report.md)：
+编辑 [docs/industry_rotation_v7_strategy_report.md](file:///d:/Work/Project/OhMyQuant/docs/industry_rotation_v7_strategy_report.md)：
 
 1. 更新顶部 final 版本信息
 2. 在版本历史表（2.2节）添加新版本行
@@ -352,8 +352,8 @@ mv scripts/industry_rotation_v_old_oos.py archive/scripts/industry_rotation_v_ol
 
 ```bash
 git add -A
-git commit -m "feat: add industry_rotation_v6 strategy (IS+OOS validated)" \
-           -m "v6 config: ind5_spi2_mom60_120, IS Sharpe 0.52, OOS Sharpe 5.39"
+git commit -m "feat: add industry_rotation_v7 strategy (IS+OOS validated)" \
+           -m "v7 config: ind5_spi2_mom60_120_riskfilter20_mkt5, IS Sharpe 0.78, OOS超额沪深300"
 ```
 
 ### Commit message 规范
@@ -404,7 +404,7 @@ git commit -m "feat: add industry_rotation_v6 strategy (IS+OOS validated)" \
 from ohmyquant.optimization import StrategyWalkForward
 
 wf = StrategyWalkForward(test_window="1Y", step="1Y")
-report = wf.run("industry_rotation", "v5")
+report = wf.run("industry_rotation", "v7")
 print(report.summary())
 ```
 
@@ -420,8 +420,8 @@ print(report.summary())
 from ohmyquant.optimization import StrategyEnsemble
 
 ens = StrategyEnsemble(weighting="perf_weight")
-ens.add_strategy("industry_rotation", "v5")
-ens.add_strategy("industry_rotation", "v4")
+ens.add_strategy("industry_rotation", "v7")
+ens.add_strategy("industry_rotation", "v6")
 result = ens.run()
 ```
 
@@ -431,19 +431,19 @@ result = ens.run()
 
 ```bash
 # 运行策略
-omq run industry_rotation v5
+omq run industry_rotation v7
 
 # 列出策略
 omq list strategies
 
 # Walk-Forward
-omq optimize walk-forward industry_rotation v5 --window 1Y --step 1Y
+omq optimize walk-forward industry_rotation v7 --window 1Y --step 1Y
 
 # 参数搜索
-omq optimize param-search industry_rotation v5 --params '{"selection.top_n": {"type": "int", "low": 10, "high": 20, "step": 5}}'
+omq optimize param-search industry_rotation v7 --params '{"selection.top_n": {"type": "int", "low": 10, "high": 20, "step": 5}}'
 
 # 策略对比
-omq compare output/v4_results.json output/v5_results.json --report output/comparison.html
+omq compare output/v6_results.json output/v7_results.json --report output/comparison.html
 ```
 
 ---
@@ -458,11 +458,11 @@ omq compare output/v4_results.json output/v5_results.json --report output/compar
 6. **及时归档** — 非 final 版本及时移至 archive/，主目录只保留2个版本
 7. **文档同步** — 每次迭代后更新报告和总结，确保可复现
 8. **命名约定** (统一规范):
-   - **代码标识**: `{type}_{version}` (如 `industry_rotation_v5`)
+   - **代码标识**: `{type}_{version}` (如 `industry_rotation_v6`)
      - `type` 为简短英文缩写: `industry_rotation`(行业轮动)...
      - `version` 标注主迭代: `v1`, `v2`...
-   - **完整名**: `{type}_{version} ({超参标签}, {状态})` (如 `industry_rotation_v6 (mf12_lowbeta_mom60_120_mkt20, final)`)
-     - 超参标签: 核心超参缩写 (如 `mf12`=12因子, `lowbeta`=含反向beta因子, `mom60_120`=60/120日动量, `mkt20`=大盘20日过滤)
+   - **完整名**: `{type}_{version} ({超参标签}, {状态})` (如 `industry_rotation_v7 (mf12_lowbeta_riskfilter20_mkt5, final)`)
+     - 超参标签: 核心超参缩写 (如 `mf12`=12因子, `lowbeta`=含反向beta因子, `riskfilter20`=20日行业风险过滤, `mkt5`=大盘5日过滤)
      - 状态标记: `final`(已收敛) / `iter`(迭代中) / `abandoned`(已放弃)
    - **目录与文件命名** (所有位置统一用代码标识):
      - 策略代码: `ohmyquant/strategy/strategies/{type}/{version}/`

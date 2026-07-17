@@ -1,6 +1,6 @@
 """行业轮动策略 OOS 净值分析
 
-基于同花顺实际交易文件（output/ths/industry_rotation_v5/）回放建仓与调仓，
+基于同花顺实际交易文件（output/ths/industry_rotation_v7/）回放建仓与调仓，
 计算 2026-06-01 以来的净值表现，对比沪深300，并给出优化建议。
 
 用法:
@@ -21,7 +21,7 @@ from ohmyquant.data.sources.duckdb_source import DuckDBSource
 
 CAPITAL = 10_000_000
 COST_RATE = 0.001
-THS_DIR = Path("output/ths/industry_rotation_v5")
+THS_DIR = Path("output/ths/industry_rotation_v7")
 BENCHMARK = "000300.XSHG"  # 沪深300
 DATA_ROOT = "D:/Work/Project/download_a_share/data"
 OOS_START = "2026-06-01"
@@ -233,7 +233,7 @@ def main():
 
     # 8. 输出报告
     print("\n" + "=" * 70)
-    print(f"  行业轮动策略 v5 OOS 净值分析 ({OOS_START} → {latest_date})")
+    print(f"  行业轮动策略 v7 OOS 净值分析 ({OOS_START} → {latest_date})")
     print("=" * 70)
     print(f"  交易日数:     {n_days}")
     print(f"  调仓次数:     {len(trade_dates)}")
