@@ -4,9 +4,7 @@
 参考 halo_index 的 PoolAllocator，泛化到任意数量池。
 
 配置中通过 allocation.method 切换:
-  method: equal         → EqualAllocator（等权）
-  method: hrp           → HRPAllocator（分层风险平价）
-  method: icir_weighted → ICIRWeightedAllocator（ICIR 加权）
+  method: equal → EqualAllocator（等权）
 """
 from __future__ import annotations
 

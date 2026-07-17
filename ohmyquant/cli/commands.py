@@ -250,7 +250,7 @@ version: "v1"
 
         init_files = [
             ("config.yaml", "# 项目配置\n"),
-            ("main.py", "# 主入口\nfrom ohmyquant.strategy.runner import StrategyRunner\n\nif __name__ == \"__main__\":\n    result = StrategyRunner.run_strategy(\"ycj\", \"v1\")\n    print(result)\n"),
+            ("main.py", "# 主入口\nfrom ohmyquant.strategy.runner import StrategyRunner\n\nif __name__ == \"__main__\":\n    result = StrategyRunner.run_strategy(\"industry_rotation\", \"v5\")\n    print(result)\n"),
             (".gitignore", "__pycache__/\n*.pyc\n*.egg-info/\n.vscode/\n"),
         ]
 

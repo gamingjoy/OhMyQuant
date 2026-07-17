@@ -55,7 +55,7 @@ rebalance:
 
 ### mixed_cn（A股+ETF混合）
 
-按代码前缀自动判断资产类型（51/15/16/52/56/59 开头为 ETF），分别使用对应费率。用于 [etf/v2](file:///d:/Work/Project/OhMyQuant/ohmyquant/strategy/strategies/etf/v2/config.yaml) 等混合策略。
+按代码前缀自动判断资产类型（51/15/16/52/56/59 开头为 ETF），分别使用对应费率。适用于 A股+ETF 混合策略。
 
 ```yaml
 rebalance:
@@ -182,7 +182,7 @@ T 日交易时段：
      → 无法获取盘中数据
 
 T 日收盘后：
-  3. 运行 omq run ycj v2
+  3. 运行 omq run industry_rotation v5
      → 回测验证策略效果
      → 结果保存到 output/results.json
 
@@ -228,10 +228,5 @@ rebalance:
 
 | 策略 | frequency | method | cost_model | threshold |
 |------|-----------|--------|------------|-----------|
-| ycj/v1 | monthly | cost_benefit | stock_cn | 默认 |
-| ycj/v2 | monthly | cost_benefit | stock_cn | 0.001 |
-| dh/v1 | quarterly | simple | stock_cn | - |
-| etf/v1 | monthly | cost_benefit | etf_cn | 默认 |
-| etf/v2 | monthly | cost_benefit | mixed_cn | 0.001 |
-| dl/v1 | monthly | cost_benefit | stock_cn | 0.002 |
-| rl/v1 | monthly | cost_benefit | stock_cn | 0.002 |
+| industry_rotation/v4 | weekly | cost_benefit | stock_cn | 默认 |
+| industry_rotation/v5 | weekly | cost_benefit | stock_cn | 默认 |

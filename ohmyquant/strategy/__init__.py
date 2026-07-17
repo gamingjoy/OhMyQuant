@@ -9,13 +9,12 @@
   - StrategyRunner: 策略运行器（统一入口）
 
 策略命名约定：
-  - YCJ_strategy: 量化策略（因子驱动）
-  - DH_strategy: 人工策略（规则驱动）
+  - industry_rotation: 行业轮动策略（多因子驱动）
 
 用法：
     # 方式1：直接运行
     from ohmyquant.strategy import run
-    result = run("ycj", "v1", backtest={"start_date": "2024-01-01"})
+    result = run("industry_rotation", "v5", backtest={"start_date": "2024-01-01"})
 
     # 方式2：创建运行器
     from ohmyquant.strategy import StrategyRunner
@@ -24,7 +23,7 @@
 
     # 方式3：从版本创建策略
     from ohmyquant.strategy import StrategyRegistry
-    strategy = StrategyRegistry.create("ycj", "v1")
+    strategy = StrategyRegistry.create("industry_rotation", "v5")
     result = strategy.run()
 """
 from .base import BaseStrategy, StrategyInfo, register_strategy

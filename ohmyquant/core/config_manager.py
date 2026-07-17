@@ -2,7 +2,7 @@
 
 基于 OmegaConf 实现三层配置合并：
   全局默认 (config/global_defaults.yaml)
-    → 策略版本 (strategies/ycj/v2/config.yaml)
+    → 策略版本 (strategies/industry_rotation/v5/config.yaml)
     → 运行时覆盖 (dict)
 
 合并后通过 Pydantic v2 模型校验，返回 StrategyConfig 对象。
@@ -40,9 +40,9 @@ class ConfigManager:
 
     用法:
         mgr = ConfigManager()
-        config = mgr.build_config("ycj", "v2")
+        config = mgr.build_config("industry_rotation", "v5")
         # 或带运行时覆盖
-        config = mgr.build_config("ycj", "v2", overrides={"selection": {"top_n": 20}})
+        config = mgr.build_config("industry_rotation", "v5", overrides={"selection": {"top_n": 20}})
     """
 
     def __init__(self, project_root: str | Path | None = None):
@@ -92,7 +92,7 @@ class ConfigManager:
     def _builtin_defaults() -> dict:
         """内置默认配置（当 global_defaults.yaml 不存在时使用）"""
         return {
-            "strategy_type": "ycj",
+            "strategy_type": "industry_rotation",
             "backtest": {
                 "start_date": "2015-01-01",
                 "end_date": "2026-06-01",
@@ -106,7 +106,7 @@ class ConfigManager:
                 "use_crowding": False,
             },
             "selection": {
-                "method": "icir",
+                "method": "industry_rotation",
                 "ic_decay": 0.65,
                 "use_icir": True,
                 "icir_window": 60,
@@ -228,7 +228,7 @@ class ConfigManager:
         """构建完整配置（三层合并 + Pydantic 校验）
 
         Args:
-            strategy_type: 策略类型 "ycj" 或 "dh"
+            strategy_type: 策略类型 "industry_rotation"
             version: 版本号，None 则用该类型的默认版本
             overrides: 运行时覆盖配置
 

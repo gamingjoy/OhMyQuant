@@ -48,7 +48,7 @@ class StrategyRegistry:
         """获取策略类（缓存）
 
         Args:
-            strategy_type: 策略类型（ycj/dh）
+            strategy_type: 策略类型（industry_rotation）
             version: 版本号（v1/v2）
 
         Returns:
@@ -69,14 +69,14 @@ class StrategyRegistry:
         """装饰器：注册策略类
 
         Args:
-            strategy_type: 策略类型（ycj/dh）
+            strategy_type: 策略类型（industry_rotation）
             version: 版本号（v1/v2）
 
         Returns:
             Callable[[type], type]: 装饰器函数
 
         Usage:
-            @StrategyRegistry.register_strategy("ycj", "v1")
+            @StrategyRegistry.register_strategy("industry_rotation", "v5")
             class YCJStrategyV1(BaseStrategy):
                 ...
         """
@@ -96,7 +96,7 @@ class StrategyRegistry:
         """创建策略实例
 
         Args:
-            strategy_type: 策略类型（ycj/dh）
+            strategy_type: 策略类型（industry_rotation）
             version: 版本号（v1/v2）
             config: 运行时配置覆盖（深度合并到基础配置）
 

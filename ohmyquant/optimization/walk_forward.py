@@ -11,7 +11,7 @@
 
 Usage:
     wf = StrategyWalkForward(test_window="1Y", step="1Y")
-    report = wf.run("ycj", "v1")
+    report = wf.run("industry_rotation", "v5")
     print(report.summary())
 """
 from __future__ import annotations
@@ -161,7 +161,7 @@ class StrategyWalkForward:
         """运行策略级 walk-forward
 
         Args:
-            strategy_type: 策略类型（ycj/etf/dh）
+            strategy_type: 策略类型（industry_rotation）
             version: 版本号（v1/v2）
             base_overrides: 基础配置覆盖（如 backtest 区间、股票池）
 

@@ -289,7 +289,7 @@ class BacktestEngine(BaseEngine):
         Returns:
             {pool_name: ic_df}  ic_df: date + 各因子 IC 列
 
-        Side effect: 存储 forward returns 到 self._pool_fwd_returns 供 ModelSelector 使用
+        Side effect: 存储 forward returns 到 self._pool_fwd_returns 供后续分析使用
         """
         pool_ic_df = {}
         self._pool_fwd_returns: dict[str, pl.DataFrame] = {}

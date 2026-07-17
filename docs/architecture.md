@@ -16,10 +16,6 @@ CLI (cli/)
         │     └── PortfolioOptimizer (engine/portfolio.py)
         ├── Factors (factors/)                    ← 31 个内置因子
         │     └── FactorAnalyzer (factors/analysis.py)  ← IC/ICIR 分析
-        ├── Models (models/)                      ← ML/DL/RL 模型
-        │     ├── ml/ (LightGBM/线性模型)
-        │     ├── dl/ (LSTM)
-        │     └── rl/ (PPO)
         ├── Execution (execution/)                ← 调仓执行
         │     ├── CostModel (cost_model.py)       ← stock_cn/etf_cn/mixed_cn
         │     ├── Rebalancer (rebalancer.py)      ← cost_benefit/simple/none
@@ -47,7 +43,7 @@ CLI (cli/)
 ### 核心组件
 
 - [discovery.py](file:///d:/Work/Project/OhMyQuant/ohmyquant/core/discovery.py)：`discover_modules(package)` 使用 `pkgutil.walk_packages` + `importlib.import_module` 扫描包目录，导入所有子模块以触发 `@register_*` 装饰器。
-- [plugin_system.py](file:///d:/Work/Project/OhMyQuant/ohmyquant/core/plugin_system.py)：`PluginRegistry` 中央注册表，管理 10 种 PluginType。`discover_builtin()` 幂等方法导入 12 个内置插件包。
+- [plugin_system.py](file:///d:/Work/Project/OhMyQuant/ohmyquant/core/plugin_system.py)：`PluginRegistry` 中央注册表，管理 9 种 PluginType。`discover_builtin()` 幂等方法导入 9 个内置插件包。
 
 ### 自动发现流程
 
@@ -63,13 +59,12 @@ import ohmyquant
               ├── import ohmyquant.execution.cost_model
               ├── import ohmyquant.execution.scheduler
               ├── import ohmyquant.execution.rebalancer
-              ├── import ohmyquant.models.ml / dl / rl
               └── import ohmyquant.strategy.strategies  → __init__ 调用 discover_modules(__name__)
 ```
 
 每个包的 `__init__.py` 调用 `discover_modules(__name__)`，扫描自身子模块。新增插件只需把 `.py` 文件放进对应包，无需修改任何 `__init__.py`。
 
-### 10 种 PluginType
+### 9 种 PluginType
 
 | 类型 | 装饰器 | 包路径 |
 |------|--------|--------|
@@ -81,7 +76,6 @@ import ohmyquant
 | COST_MODEL | `@register_cost_model("name")` | `execution/cost_model.py` |
 | SCHEDULER | `@register_scheduler("name")` | `execution/scheduler.py` |
 | DATA_SOURCE | `@register_data_source("name")` | `data/sources/` |
-| MODEL | `@register_model("name")` | `models/ml/`, `models/dl/`, `models/rl/` |
 | STRATEGY | `@register_strategy("type", "version")` | `strategy/strategies/` |
 
 ## 数据流
@@ -110,24 +104,22 @@ Analysis (metrics / compare / report / significance)
 策略目录结构：
 ```
 strategy/strategies/
-├── ycj/
-│   ├── v1/
-│   │   ├── __init__.py
-│   │   ├── config.yaml
-│   │   └── strategy.py      ← @register_strategy("ycj", "v1")
-│   └── v2/
-│       ├── config.yaml
-│       └── strategy.py
-└── dh/
-    └── v1/
-        └── ...
+└── industry_rotation/
+    ├── v4/
+    │   ├── __init__.py
+    │   ├── config.yaml
+    │   └── strategy.py      ← @register_strategy("industry_rotation", "v4")
+    └── v5/
+        ├── __init__.py
+        ├── config.yaml
+        └── strategy.py      ← @register_strategy("industry_rotation", "v5")
 ```
 
 [VersionManager](file:///d:/Work/Project/OhMyQuant/ohmyquant/strategy/version_manager.py) 支持迭代版本（如 v2.1）：
 ```
-strategies/ycj/v2/iterations/v2_1/
+strategies/industry_rotation/v5/
   ├── config.yaml
   └── strategy.py
 ```
 
-策略查找优先级：`PluginRegistry.get(STRATEGY, "ycj_v1")` → `importlib.import_module`（兜底）。
+策略查找优先级：`PluginRegistry.get(STRATEGY, "industry_rotation_v5")` → `importlib.import_module`（兜底）。

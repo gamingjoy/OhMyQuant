@@ -185,7 +185,7 @@ class StrategyRunner:
         """便捷方法：从版本运行策略
 
         Args:
-            strategy_type: 策略类型（ycj/dh）
+            strategy_type: 策略类型（industry_rotation）
             version: 版本号（v1/v2）
             config_overrides: 运行时配置覆盖
 
@@ -209,7 +209,7 @@ def run(strategy_type: str, version: str, **kwargs) -> StrategyResult:
     """便捷函数：运行策略
 
     Args:
-        strategy_type: 策略类型（ycj/dh）
+        strategy_type: 策略类型（industry_rotation）
         version: 版本号（v1/v2）
         **kwargs: 配置覆盖参数
 

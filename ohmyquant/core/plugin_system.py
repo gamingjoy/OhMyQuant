@@ -4,12 +4,12 @@
 通过统一注册系统管理。
 
 注册方式：
-  1. 装饰器：@register_factor("mom_1m")  /  @register_selector("icir")
+  1. 装饰器：@register_factor("mom_1m")  /  @register_selector("industry_rotation")
   2. 运行时：PluginRegistry.register(...)(klass)
   3. 外部包：通过 pyproject.toml 的 [project.entry-points."ohmyquant.plugins"] 声明
 
 使用方式：
-  PluginRegistry.create(PluginType.SELECTOR, "icir", config={...})
+  PluginRegistry.create(PluginType.SELECTOR, "industry_rotation", config={...})
   PluginRegistry.get(PluginType.FACTOR, "mom_1m")
   PluginRegistry.list_plugins(PluginType.FACTOR)
 """
@@ -77,9 +77,6 @@ class PluginRegistry:
         "ohmyquant.execution.cost_model",
         "ohmyquant.execution.scheduler",
         "ohmyquant.execution.rebalancer",
-        "ohmyquant.models.ml",
-        "ohmyquant.models.dl",
-        "ohmyquant.models.rl",
         "ohmyquant.strategy.strategies",
     )
 
@@ -316,11 +313,11 @@ def register_strategy(strategy_type: str, version: str):
     """注册策略
 
     Args:
-        strategy_type: 策略类型（ycj/dh）
+        strategy_type: 策略类型（industry_rotation）
         version: 版本号（v1/v2）
 
     Usage:
-        @register_strategy("ycj", "v1")
+        @register_strategy("industry_rotation", "v5")
         class YCJStrategyV1(BaseStrategy):
             ...
     """

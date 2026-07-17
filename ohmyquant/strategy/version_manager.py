@@ -4,7 +4,7 @@
 
 目录结构：
     strategies/
-    ├── ycj/
+    ├── industry_rotation/
     │   ├── v1/
     │   │   ├── __init__.py
     │   │   ├── config.yaml
@@ -17,11 +17,6 @@
     │           └── v2_1/
     │               ├── __init__.py
     │               └── config.yaml
-    └── dh/
-        └── v1/
-            ├── __init__.py
-            ├── config.yaml
-            └── strategy.py
 
 迭代版本映射：
     v2.1 → v2/iterations/v2_1/
@@ -52,11 +47,11 @@ class VersionManager:
         """获取策略模块路径
 
         Args:
-            strategy_type: 策略类型（ycj/dh）
+            strategy_type: 策略类型（industry_rotation）
             version: 版本号（v1/v2/v2.1）
 
         Returns:
-            str: 模块路径（如 "ohmyquant.strategy.strategies.ycj.v1.strategy"）
+            str: 模块路径（如 "ohmyquant.strategy.strategies.industry_rotation.v5.strategy"）
 
         Raises:
             ValueError: 版本格式无效
@@ -75,7 +70,7 @@ class VersionManager:
         """获取配置文件路径
 
         Args:
-            strategy_type: 策略类型（ycj/dh）
+            strategy_type: 策略类型（industry_rotation）
             version: 版本号（v1/v2/v2.1）
 
         Returns:
@@ -106,7 +101,7 @@ class VersionManager:
         未命中再走 importlib 动态导入（用于尚未被发现的迭代版本）。
 
         Args:
-            strategy_type: 策略类型（ycj/dh）
+            strategy_type: 策略类型（industry_rotation）
             version: 版本号（v1/v2/v2.1）
 
         Returns:
@@ -153,15 +148,14 @@ class VersionManager:
         """猜测策略类名
 
         Args:
-            strategy_type: 策略类型（ycj/dh）
+            strategy_type: 策略类型（industry_rotation）
             version: 版本号（v1/v2/v2.1）
 
         Returns:
-            str: 类名（如 YCJStrategyV1）
+            str: 类名（如 IndustryRotationStrategyV5）
         """
         type_map = {
-            "ycj": "YCJ",
-            "dh": "DH",
+            "INDUSTRY_ROTATION": "IndustryRotation",
         }
         type_prefix = type_map.get(strategy_type.upper(), strategy_type.capitalize())
 
@@ -175,7 +169,7 @@ class VersionManager:
         """加载策略配置
 
         Args:
-            strategy_type: 策略类型（ycj/dh）
+            strategy_type: 策略类型（industry_rotation）
             version: 版本号（v1/v2/v2.1）
 
         Returns:
@@ -219,7 +213,7 @@ class VersionManager:
         """列出策略类型的所有版本
 
         Args:
-            strategy_type: 策略类型（ycj/dh）
+            strategy_type: 策略类型（industry_rotation）
 
         Returns:
             list[str]: 版本号列表
@@ -257,7 +251,7 @@ class VersionManager:
         """列出所有策略类型
 
         Returns:
-            list[str]: 策略类型列表（ycj/dh）
+            list[str]: 策略类型列表（industry_rotation）
         """
         if not os.path.exists(STRATEGIES_DIR):
             return []

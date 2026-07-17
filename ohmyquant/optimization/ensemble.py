@@ -13,15 +13,14 @@ Usage:
     # 方式 1: 从已保存的结果文件加载（推荐，避免重跑回测）
     ens = StrategyEnsemble.from_results(
         weighting="perf_weight",
-        result_files=["output/ycj_v1/results.json", "output/etf_v1/results.json"],
+        result_files=["output/industry_rotation_v5/results.json"],
     )
     result = ens.run_from_results()
     print(result.metrics.sharpe_ratio)
 
     # 方式 2: 重新运行回测（耗时较长）
     ens = StrategyEnsemble(weighting="perf_weight")
-    ens.add_strategy("ycj", "v1")
-    ens.add_strategy("etf", "v1")
+    ens.add_strategy("industry_rotation", "v5")
     result = ens.run()
 """
 from __future__ import annotations

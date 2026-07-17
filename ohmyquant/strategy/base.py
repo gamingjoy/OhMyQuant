@@ -11,7 +11,7 @@
 用法：
     from ohmyquant.strategy import BaseStrategy, register_strategy
 
-    @register_strategy("ycj", "v1")
+    @register_strategy("industry_rotation", "v5")
     class YCJStrategyV1(BaseStrategy):
         def run(self):
             ...
@@ -123,7 +123,7 @@ class BaseStrategy(ABC):
         """工厂方法：从版本创建策略实例
 
         Args:
-            strategy_type: 策略类型（ycj/dh）
+            strategy_type: 策略类型（industry_rotation）
             version: 版本号（v1/v2）
             config: 运行时配置覆盖
 
@@ -137,11 +137,11 @@ def register_strategy(strategy_type: str, version: str):
     """装饰器：注册策略类
 
     Args:
-        strategy_type: 策略类型（ycj/dh）
+        strategy_type: 策略类型（industry_rotation）
         version: 版本号（v1/v2）
 
     Usage:
-        @register_strategy("ycj", "v1")
+        @register_strategy("industry_rotation", "v5")
         class YCJStrategyV1(BaseStrategy):
             ...
     """

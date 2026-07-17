@@ -11,7 +11,7 @@ param_space 每项规格：
 
 Usage:
     ps = ParamSearcher(n_trials=20, metric="sharpe")
-    report = ps.search("ycj", "v1", {
+    report = ps.search("industry_rotation", "v5", {
         "selection.top_n": {"type": "int", "low": 20, "high": 80, "step": 20},
         "risk.target_vol": {"type": "float", "low": 0.15, "high": 0.35, "step": 0.1},
     })

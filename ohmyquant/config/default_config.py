@@ -47,8 +47,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "sources": ["jqdata", "local_parquet"],
     },
     "strategy": {
-        "default_strategy": "ycj",
-        "default_version": "v1",
+        "default_strategy": "industry_rotation",
+        "default_version": "v5",
         "rebalance_frequency": "monthly",
         "max_positions": 50,
         "min_weight": 0.001,

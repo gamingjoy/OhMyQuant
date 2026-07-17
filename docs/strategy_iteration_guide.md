@@ -43,7 +43,7 @@
 | **IS（样本内）** | 模型训练、参数搜索、候选池选择 | 回测区间 + 训练数据 |
 | **OOS（样本外）** | 最终验证，**不调任何参数** | 仅看结果 |
 
-### mlf 策略的数据划分
+### industry_rotation 策略的数据划分
 
 ```
 数据起始: 2018-01-01 (因子数据从2018开始)
@@ -65,29 +65,29 @@ strategy.config.backtest.end_date = "2026-07-10"         # OOS 终点
 strategy.config.backtest.data_start_date = "2018-01-01"  # 训练数据不变
 ```
 
-**关键规则**: IS 和 OOS 的 `data_start_date` 相同（ML训练需要历史数据），但回测区间不重叠。
+**关键规则**: IS 和 OOS 的 `data_start_date` 相同（行业轮动需要历史数据计算动量/因子），但回测区间不重叠。
 
-参考: [mlf_is_pool_compare.py](file:///d:/Work/Project/OhMyQuant/scripts/mlf_is_pool_compare.py)、[mlf_is_gridsearch.py](file:///d:/Work/Project/OhMyQuant/scripts/mlf_is_gridsearch.py)
+参考: [industry_rotation_is.py](file:///d:/Work/Project/OhMyQuant/scripts/industry_rotation_is.py)
 
 ---
 
 ## 步骤 2：复制策略目录
 
 ```bash
-# 从 mlf/v5 复制到 mlf/v9
-Copy-Item -Recurse ohmyquant/strategy/strategies/mlf/v5 ohmyquant/strategy/strategies/mlf/v9
+# 从 industry_rotation/v5 复制到 industry_rotation/v6
+Copy-Item -Recurse ohmyquant/strategy/strategies/industry_rotation/v5 ohmyquant/strategy/strategies/industry_rotation/v6
 ```
 
 修改 `strategy.py` 中的注册信息：
 
 ```python
-@register_strategy("mlf", "v9")           # 改版本号
-class MLFStrategyV9(BaseStrategy):         # 改类名
+@register_strategy("industry_rotation", "v6")           # 改版本号
+class IndustryRotationStrategyV6(BaseStrategy):          # 改类名
     # ...
     def from_version(cls, strategy_type, version, config=None):
         base_config = {
-            "strategy_type": "mlf",
-            "strategy_version": "v9",       # 改版本号
+            "strategy_type": "industry_rotation",
+            "strategy_version": "v6",       # 改版本号
             # ...
         }
 ```
@@ -95,34 +95,41 @@ class MLFStrategyV9(BaseStrategy):         # 改类名
 同时修改 `__init__.py`：
 
 ```python
-"""ML 选因子策略 v9"""
-from .strategy import MLFStrategyV9
-__all__ = ["MLFStrategyV9"]
+"""行业轮动策略 v6"""
+from .strategy import IndustryRotationStrategyV6
+__all__ = ["IndustryRotationStrategyV6"]
 ```
 
 ---
 
 ## 步骤 3：编辑 config.yaml
 
-以 mlf/v8 为例，参考 [mlf/v8/config.yaml](file:///d:/Work/Project/OhMyQuant/ohmyquant/strategy/strategies/mlf/v8/config.yaml)：
+以 industry_rotation/v5 为例，参考 [industry_rotation/v5/config.yaml](file:///d:/Work/Project/OhMyQuant/ohmyquant/strategy/strategies/industry_rotation/v5/config.yaml)：
 
 ```yaml
 selection:
-  method: mlf
-  top_n: 20                # 选股数量
-  max_stock_weight: 0.04   # 单股上限
-  mlf:
-    top_k_factors: 30      # ML选因子数
-    train_window: 1008     # 训练窗口(天)
-    retrain_freq: 21       # 重训练频率
-    max_industry_weight: 0.25  # 行业暴露上限
+  method: industry_rotation
+  top_n: 10                # 选股数量
+  max_stock_weight: 0.10   # 单股上限
+  industry_rotation:
+    top_industries: 5            # 选中行业数
+    stocks_per_industry: 2       # 每个行业选股数
+    momentum_short: 60           # 短期动量窗口(天)
+    momentum_long: 120           # 长期动量窗口(天)
+    weight_short: 0.6            # 短期动量权重
+    weight_long: 0.4             # 长期动量权重
+    max_industry_weight: 0.30    # 行业暴露上限
+    market_filter: true          # 大盘趋势过滤
+    market_index: "000300.XSHG"  # 大盘参考指数
+    market_ma_short: 10          # 大盘短期均线
+    market_ma_long: 20           # 大盘长期均线
 
 pools:
   stocks:
     index: "000300.XSHG"   # 候选池指数
 
 factors:
-  - mom_1m                 # 因子列表(mlf用预计算因子，这里仅占位)
+  - mom_1m                 # 因子列表(industry_rotation用factor_names内定义的多因子)
 ```
 
 ### config.yaml 关键字段
@@ -130,9 +137,9 @@ factors:
 | 字段 | 说明 | 可选值 |
 |------|------|--------|
 | `backtest.start_date` / `end_date` | 回测区间 | 日期字符串 |
-| `selection.method` | 选股器 | icir/hybrid/momentum/mlf |
+| `selection.method` | 选股器 | industry_rotation |
 | `selection.top_n` | 选股数量 | 整数 |
-| `selection.max_stock_weight` | 单股权重上限 | 0.02-0.05 |
+| `selection.max_stock_weight` | 单股权重上限 | 0.02-0.10 |
 | `risk.target_vol` | 目标波动率 | 0.1-0.4 |
 | `rebalance.frequency` | 调仓频率 | daily/weekly/monthly |
 | `rebalance.method` | 调仓方法 | cost_benefit/simple/none |
@@ -144,7 +151,7 @@ factors:
 
 参考 [factor_development.md](file:///d:/Work/Project/OhMyQuant/docs/factor_development.md)。在 [factors/builtin/](file:///d:/Work/Project/OhMyQuant/ohmyquant/factors/builtin/) 下新建 `.py` 文件，用 `@register_factor` 注册。
 
-> mlf 策略使用 jqdata 预计算的 260 个因子，不需要此步骤。
+> industry_rotation 策略在 `selection.industry_rotation.factor_names` 中直接使用聚宽预计算的因子，不需要此步骤。
 
 ---
 
@@ -164,7 +171,7 @@ factors:
 
 ### 对比脚本
 
-参考 [mlf_is_pool_compare.py](file:///d:/Work/Project/OhMyQuant/scripts/mlf_is_pool_compare.py)：
+参考 [industry_rotation_is.py](file:///d:/Work/Project/OhMyQuant/scripts/industry_rotation_is.py)：
 
 ```python
 # IS 回测配置
@@ -174,9 +181,9 @@ strategy.config.backtest.data_start_date = "2018-01-01"
 strategy.config.pools = {"stocks": {"index": "000300.XSHG"}}  # 改池子
 ```
 
-### mlf 经验
+### 行业轮动经验
 
-沪深300 IS Sharpe 0.18 > 中证800 IS Sharpe 0.16，且中证800导致 ML 选到周期股（OOS崩盘）。**大盘股池更稳定**。
+沪深300 IS Sharpe 0.18 > 中证800 IS Sharpe 0.16，且中证800导致动量选到周期股（OOS崩盘）。**大盘股池更稳定**。
 
 ---
 
@@ -188,19 +195,20 @@ strategy.config.pools = {"stocks": {"index": "000300.XSHG"}}  # 改池子
 
 **方式一：自定义网格搜索**（推荐，可控性强）
 
-参考 [mlf_is_gridsearch.py](file:///d:/Work/Project/OhMyQuant/scripts/mlf_is_gridsearch.py)：
+参考 [industry_rotation_is.py](file:///d:/Work/Project/OhMyQuant/scripts/industry_rotation_is.py)：
 
 ```python
 COMBOS = [
-    {"label": "n20_k30_ind25", "top_n": 20, "top_k": 30, "ind_cap": 0.25},
-    {"label": "n30_k25_ind20", "top_n": 30, "top_k": 25, "ind_cap": 0.20},
+    {"label": "ind5_spi2_mom60_120", "top_industries": 5, "stocks_per_industry": 2, "mom_s": 60, "mom_l": 120},
+    {"label": "ind4_spi3_mom60_120", "top_industries": 4, "stocks_per_industry": 3, "mom_s": 60, "mom_l": 120},
     # ...
 ]
 
 for combo in COMBOS:
-    strategy.config.selection.top_n = combo["top_n"]
-    strategy.config.selection.mlf["top_k_factors"] = combo["top_k"]
-    strategy.config.selection.mlf["max_industry_weight"] = combo["ind_cap"]
+    strategy.config.selection.industry_rotation["top_industries"] = combo["top_industries"]
+    strategy.config.selection.industry_rotation["stocks_per_industry"] = combo["stocks_per_industry"]
+    strategy.config.selection.industry_rotation["momentum_short"] = combo["mom_s"]
+    strategy.config.selection.industry_rotation["momentum_long"] = combo["mom_l"]
     # 运行 IS 回测...
 ```
 
@@ -210,16 +218,17 @@ for combo in COMBOS:
 from ohmyquant.optimization import ParamSearcher
 
 ps = ParamSearcher(n_trials=50, metric="sharpe")
-report = ps.search("mlf", "v9", {
-    "selection.top_n": {"type": "int", "low": 20, "high": 40, "step": 10},
-    "selection.mlf.top_k_factors": {"type": "int", "low": 20, "high": 30, "step": 5},
+report = ps.search("industry_rotation", "v6", {
+    "selection.top_n": {"type": "int", "low": 10, "high": 20, "step": 5},
+    "selection.industry_rotation.top_industries": {"type": "int", "low": 3, "high": 6, "step": 1},
+    "selection.industry_rotation.momentum_long": {"type": "int", "low": 60, "high": 120, "step": 30},
 })
 ```
 
 ### 搜索原则
 
 1. **只在 IS 上搜索** — OOS 数据不参与参数选择
-2. **组合数不宜过多** — IS 回测慢（mlf约15分钟/次），3-9个关键组合即可
+2. **组合数不宜过多** — IS 回测慢（industry_rotation约15分钟/次），3-9个关键组合即可
 3. **避免过拟合** — 参数空间不宜过宽，围绕基线小幅调整
 
 ---
@@ -228,7 +237,7 @@ report = ps.search("mlf", "v9", {
 
 > 用 IS 选出的最优配置，在 OOS 期间回测。**只看结果，不调参数**。
 
-参考 [mlf_v8_oos.py](file:///d:/Work/Project/OhMyQuant/scripts/mlf_v8_oos.py)：
+参考 [industry_rotation_oos.py](file:///d:/Work/Project/OhMyQuant/scripts/industry_rotation_oos.py)：
 
 ```python
 # OOS 回测配置
@@ -254,7 +263,7 @@ strategy.config.backtest.end_date = "2026-07-10"      # OOS 终点
 
 分析建仓/调仓的持仓明细、行业分布、换手率。
 
-参考 [mlf_position_analysis.py](file:///d:/Work/Project/OhMyQuant/scripts/mlf_position_analysis.py)：
+参考 [industry_rotation_daily.py](file:///d:/Work/Project/OhMyQuant/scripts/industry_rotation_daily.py)：
 
 ```python
 # 分析内容
@@ -283,12 +292,12 @@ strategy.config.backtest.end_date = "2026-07-10"      # OOS 终点
 from ohmyquant.strategy import StrategyRunner
 from ohmyquant.analysis import StrategyComparator
 
-r1 = StrategyRunner.run_strategy("mlf", "v5")
-r2 = StrategyRunner.run_strategy("mlf", "v8")
+r1 = StrategyRunner.run_strategy("industry_rotation", "v4")
+r2 = StrategyRunner.run_strategy("industry_rotation", "v5")
 
 comparator = StrategyComparator({
-    "v5": r1.backtest_result.daily_returns.to_numpy(),
-    "v8": r2.backtest_result.daily_returns.to_numpy(),
+    "v4": r1.backtest_result.daily_returns.to_numpy(),
+    "v5": r2.backtest_result.daily_returns.to_numpy(),
 })
 print(comparator.get_comparison_table())
 print(comparator.rank_strategies(metric="sharpe_ratio"))
@@ -310,27 +319,18 @@ print(comparator.rank_strategies(metric="sharpe_ratio"))
 
 ### 10.1 更新策略报告
 
-编辑 [docs/mlf_strategy_report.md](file:///d:/Work/Project/OhMyQuant/docs/mlf_strategy_report.md)：
+编辑 [docs/industry_rotation_v5_strategy_report.md](file:///d:/Work/Project/OhMyQuant/docs/industry_rotation_v5_strategy_report.md)：
 
 1. 更新顶部 final 版本信息
 2. 在版本历史表（2.2节）添加新版本行
 3. 在 IS 验证表（2.4节）添加新组合结果
 4. 更新迭代思路（第3节）
 
-### 10.2 更新总结文档
-
-编辑 [docs/mlf_strategy_summary.md](file:///d:/Work/Project/OhMyQuant/docs/mlf_strategy_summary.md)：
-
-1. 更新迭代路线图
-2. 更新核心指标对比表
-3. 更新最终配置表
-
-### 文档命名规范
+### 10.2 文档命名规范
 
 | 文档 | 命名 | 内容 |
 |------|------|------|
-| 详细报告 | `{strategy}_strategy_report.md` | 完整迭代记录 |
-| 总结文档 | `{strategy}_strategy_summary.md` | 一页纸概览 |
+| 详细报告 | `{type}_{version}_strategy_report.md` | 完整迭代记录 |
 
 ---
 
@@ -340,10 +340,10 @@ print(comparator.rank_strategies(metric="sharpe_ratio"))
 
 ```bash
 # 归档非 final 的旧版本
-mv ohmyquant/strategy/strategies/mlf/v_old archive/strategies/mlf/v_old
+mv ohmyquant/strategy/strategies/industry_rotation/v_old archive/strategies/industry_rotation/v_old
 
 # 归档旧脚本
-mv scripts/mlf_v_old_oos.py archive/scripts/mlf_v_old_oos.py
+mv scripts/industry_rotation_v_old_oos.py archive/scripts/industry_rotation_v_old_oos.py
 ```
 
 **保留规则**: 主目录只保留当前 final 和前一版 final（用于对比）。
@@ -352,8 +352,8 @@ mv scripts/mlf_v_old_oos.py archive/scripts/mlf_v_old_oos.py
 
 ```bash
 git add -A
-git commit -m "feat: add mlf_v9 strategy (IS+OOS validated)" \
-           -m "v9 config: n20_k30_ind25, IS Sharpe 0.52, OOS Sharpe 5.39"
+git commit -m "feat: add industry_rotation_v6 strategy (IS+OOS validated)" \
+           -m "v6 config: ind5_spi2_mom60_120, IS Sharpe 0.52, OOS Sharpe 5.39"
 ```
 
 ### Commit message 规范
@@ -404,7 +404,7 @@ git commit -m "feat: add mlf_v9 strategy (IS+OOS validated)" \
 from ohmyquant.optimization import StrategyWalkForward
 
 wf = StrategyWalkForward(test_window="1Y", step="1Y")
-report = wf.run("mlf", "v8")
+report = wf.run("industry_rotation", "v5")
 print(report.summary())
 ```
 
@@ -420,8 +420,8 @@ print(report.summary())
 from ohmyquant.optimization import StrategyEnsemble
 
 ens = StrategyEnsemble(weighting="perf_weight")
-ens.add_strategy("mlf", "v8")
-ens.add_strategy("etf", "v1")
+ens.add_strategy("industry_rotation", "v5")
+ens.add_strategy("industry_rotation", "v4")
 result = ens.run()
 ```
 
@@ -431,19 +431,19 @@ result = ens.run()
 
 ```bash
 # 运行策略
-omq run mlf v8
+omq run industry_rotation v5
 
 # 列出策略
 omq list strategies
 
 # Walk-Forward
-omq optimize walk-forward mlf v8 --window 1Y --step 1Y
+omq optimize walk-forward industry_rotation v5 --window 1Y --step 1Y
 
 # 参数搜索
-omq optimize param-search mlf v8 --params '{"selection.top_n": {"type": "int", "low": 20, "high": 40, "step": 10}}'
+omq optimize param-search industry_rotation v5 --params '{"selection.top_n": {"type": "int", "low": 10, "high": 20, "step": 5}}'
 
 # 策略对比
-omq compare output/v5_results.json output/v8_results.json --report output/comparison.html
+omq compare output/v4_results.json output/v5_results.json --report output/comparison.html
 ```
 
 ---
@@ -452,14 +452,14 @@ omq compare output/v5_results.json output/v8_results.json --report output/compar
 
 1. **IS/OOS 严格划分** — 所有参数选择基于 IS，OOS 仅验证（防前视偏差）
 2. **渐进迭代** — 每次只改一个维度（选股/因子/风控），对比效果后再叠加
-3. **大盘股池优先** — 沪深300比中证800更稳定（mlf经验）
+3. **大盘股池优先** — 沪深300比中证800更稳定（行业轮动经验）
 4. **避免过拟合** — 参数组合数不超过9个，围绕基线小幅调整
 5. **成本意识** — 调仓频率提升会增加成本，用 `cost_benefit` 调仓器自动权衡
 6. **及时归档** — 非 final 版本及时移至 archive/，主目录只保留2个版本
 7. **文档同步** — 每次迭代后更新报告和总结，确保可复现
 8. **命名约定** (统一规范):
-   - **代码标识**: `{type}_{version}` (如 `industry_rotation_v5`, `mlf_v8`)
-     - `type` 为简短英文缩写: `industry_rotation`(行业轮动), `mlf`(ML选因子)...
+   - **代码标识**: `{type}_{version}` (如 `industry_rotation_v5`)
+     - `type` 为简短英文缩写: `industry_rotation`(行业轮动)...
      - `version` 标注主迭代: `v1`, `v2`...
    - **完整名**: `{type}_{version} ({超参标签}, {状态})` (如 `industry_rotation_v5 (mf10_mom60_120_mkt20, final)`)
      - 超参标签: 核心超参缩写 (如 `mf10`=10因子, `mom60_120`=60/120日动量, `mkt20`=大盘20日过滤)

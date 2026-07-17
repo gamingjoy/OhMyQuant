@@ -67,17 +67,11 @@ class MySelector(BaseSelector):
 
 文件放入 [engine/selectors/](file:///d:/Work/Project/OhMyQuant/ohmyquant/engine/selectors/) 即自动注册。
 
-## 7 种内置选股器
+## 内置选股器
 
 | 选股器 | method 配置值 | 适用场景 |
 |--------|--------------|----------|
-| ICIRSelector | `icir` | 基于因子 ICIR 加权选股，适合多因子模型基线 |
-| MomentumSelector | `momentum` | 纯动量排名选股，适合趋势市场 |
-| HybridSelector | `hybrid` | ICIR + 动量混合，兼顾因子有效性和趋势信号 |
-| AdaptiveICIRSelector | `adaptive_icir` | 按市场状态自适应调整 ICIR 参数 |
-| MLSelector | `ml` | 基于 ML 模型（LightGBM 等）选股 |
-| ModelSelector | `model` | 基于 DL 模型（LSTM 等）选股 |
-| RLSelector | `rl` | 基于 RL 模型（PPO 等）组合管理 |
+| IndustryRotationSelector | `industry_rotation` | 行业轮动+多因子评分+大盘趋势过滤 |
 
 ### 配置切换
 
@@ -85,7 +79,7 @@ class MySelector(BaseSelector):
 
 ```yaml
 selection:
-  method: icir          # 选股器名
+  method: industry_rotation  # 选股器名
   top_n: 50             # 选股数量
   max_stock_weight: 0.02
 ```

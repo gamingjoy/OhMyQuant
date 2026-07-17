@@ -31,7 +31,7 @@ class BacktestConfig(BaseModel):
 class SelectionConfig(BaseModel):
     """选股参数"""
 
-    method: str = "icir"  # icir / ml / hybrid / adaptive
+    method: str = "industry_rotation"  # industry_rotation
     ic_decay: float = Field(0.65, gt=0, le=1.0)
     use_icir: bool = True
     icir_window: int = Field(60, ge=10, le=504)
@@ -53,11 +53,8 @@ class SelectionConfig(BaseModel):
     factor_momentum_up: float = 1.2
     factor_momentum_down: float = 0.8
     hybrid: dict[str, Any] = Field(default_factory=dict)
-    ml: dict[str, Any] = Field(default_factory=dict)
-    mlf: dict[str, Any] = Field(default_factory=dict)
     adaptive: dict[str, Any] = Field(default_factory=dict)
-    model_name: str = ""
-    model: dict[str, Any] = Field(default_factory=dict)
+    industry_rotation: dict[str, Any] = Field(default_factory=dict)
 
     model_config = {"extra": "allow"}
 
@@ -149,7 +146,7 @@ class StrategyConfig(BaseModel):
 
     strategy_version: str = "v1"
     strategy_name: str = ""
-    strategy_type: str = "ycj"  # ycj / dh
+    strategy_type: str = "industry_rotation"
     description: str = ""
 
     backtest: BacktestConfig = Field(default_factory=BacktestConfig)

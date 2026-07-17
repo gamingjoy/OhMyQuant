@@ -16,10 +16,7 @@ class BaseSelector(ABC):
     子类实现 select() 方法，根据因子值和 IC 数据选出股票并分配权重。
 
     配置中通过 selection.method 切换:
-      method: icir    → ICIRSelector
-      method: ml      → MLSelector
-      method: hybrid  → HybridSelector
-      method: adaptive → AdaptiveICIRSelector
+      method: industry_rotation → IndustryRotationSelector
     """
 
     def __init__(self, config: dict | None = None):

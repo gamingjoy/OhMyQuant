@@ -41,7 +41,7 @@ class TestStrategyRegistry:
     def test_create_strategy(self):
         """测试创建策略"""
         try:
-            strategy = StrategyRegistry.create("ycj", "v1")
+            strategy = StrategyRegistry.create("industry_rotation", "v5")
             assert strategy is not None
         except Exception:
             pytest.skip("策略实现可能尚未完成")
@@ -49,7 +49,7 @@ class TestStrategyRegistry:
     def test_get_strategy_class(self):
         """测试获取策略类"""
         try:
-            strategy_class = StrategyRegistry.get_strategy_class("ycj", "v1")
+            strategy_class = StrategyRegistry.get_strategy_class("industry_rotation", "v5")
             assert strategy_class is not None
         except Exception:
             pytest.skip("策略实现可能尚未完成")
@@ -66,7 +66,7 @@ class TestVersionManager:
     def test_list_versions(self):
         """测试列出版本"""
         try:
-            versions = VersionManager.list_versions("ycj")
+            versions = VersionManager.list_versions("industry_rotation")
             assert isinstance(versions, list)
         except Exception:
             pytest.skip("策略目录可能不存在")
