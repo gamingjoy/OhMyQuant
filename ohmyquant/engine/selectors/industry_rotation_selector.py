@@ -86,6 +86,20 @@ class IndustryRotationSelector(BaseSelector):
         self.market_index: str = ir_cfg.get("market_index", "000300.XSHG")
         self.market_ma_short: int = ir_cfg.get("market_ma_short", 20)
         self.market_ma_long: int = ir_cfg.get("market_ma_long", 60)
+        # 绝对动量（Dual Momentum）：近期收益为负时降仓，参考 Antonacci 双动量
+        self.absolute_momentum: bool = ir_cfg.get("absolute_momentum", False)
+        self.absolute_momentum_window: int = ir_cfg.get(
+            "absolute_momentum_window", 20
+        )
+        self.absolute_momentum_threshold: float = ir_cfg.get(
+            "absolute_momentum_threshold", 0.0
+        )
+        self.absolute_momentum_scale: float = ir_cfg.get(
+            "absolute_momentum_scale", 0.3
+        )
+        # 逆波动率加权（风险平价）：替代等权，降低高波动股权重
+        self.use_inv_vol_weight: bool = ir_cfg.get("use_inv_vol_weight", False)
+        self.inv_vol_window: int = ir_cfg.get("inv_vol_window", 20)
         # 多因子选股
         self.use_factors: bool = ir_cfg.get("use_factors", False)
         self.factor_names: list[str] = ir_cfg.get("factor_names", [])
@@ -301,10 +315,31 @@ class IndustryRotationSelector(BaseSelector):
         ma_long = float(np.mean(prices[-self.market_ma_long:]))
 
         if current_price < ma_long:
-            return 0.0  # 跌破长期均线，空仓
+            ma_scale = 0.0  # 跌破长期均线，空仓
         elif current_price < ma_short:
-            return 0.5  # 跌破短期均线，降仓50%
-        return 1.0
+            ma_scale = 0.5  # 跌破短期均线，降仓50%
+        else:
+            ma_scale = 1.0
+
+        # 绝对动量叠加（Dual Momentum）：近期收益为负时进一步降仓
+        # 参考 Antonacci 双动量：绝对动量提供趋势过滤，在下跌趋势中主动避险
+        if (
+            self.absolute_momentum
+            and ma_scale > 0
+            and len(prices) >= self.absolute_momentum_window + 1
+        ):
+            abs_ret = (
+                prices[-1] / prices[-self.absolute_momentum_window - 1] - 1
+            )
+            if abs_ret < self.absolute_momentum_threshold:
+                ma_scale *= self.absolute_momentum_scale
+                logger.debug(
+                    f"绝对动量降仓: {self.absolute_momentum_window}日收益="
+                    f"{abs_ret:.2%} < {self.absolute_momentum_threshold}, "
+                    f"仓位×{self.absolute_momentum_scale}"
+                )
+
+        return ma_scale
 
     def _build_ml_training_data(
         self, select_idx: int, close: pl.DataFrame, stock_codes: list[str]
@@ -701,13 +736,53 @@ class IndustryRotationSelector(BaseSelector):
         if not selected:
             return None
 
-        # 等权配置
         n_stocks = len(selected)
-        base_weight = 1.0 / n_stocks
-        weights = {code: base_weight for code in selected}
 
-        # 应用个股权重上限
-        weights = self.apply_weight_cap(weights, self.max_stock_weight)
+        # 逆波动率加权（风险平价）或等权
+        # 参考 Risk Parity 研究：逆波动率加权降低高波动股暴露，平滑收益
+        if self.use_inv_vol_weight:
+            close_numeric = close.select(
+                [c for c in close.columns if c != "date"]
+            )
+            vol_dict: dict[str, float] = {}
+            for code in selected:
+                prices_list = close_numeric[code].to_list()
+                if len(prices_list) >= self.inv_vol_window + 1:
+                    rets = [
+                        prices_list[i] / prices_list[i - 1] - 1
+                        for i in range(
+                            len(prices_list) - self.inv_vol_window,
+                            len(prices_list),
+                        )
+                        if prices_list[i - 1] and prices_list[i - 1] > 0
+                    ]
+                    vol = (
+                        float(np.std(rets, ddof=1))
+                        if len(rets) > 1
+                        else 0.02
+                    )
+                    vol_dict[code] = max(vol, 0.01)
+                else:
+                    vol_dict[code] = 0.02
+            inv_vols = {
+                code: 1.0 / vol_dict[code] for code in selected
+            }
+            total_inv_vol = sum(inv_vols.values())
+            weights = {
+                code: inv_vols[code] / total_inv_vol for code in selected
+            }
+            logger.debug(
+                f"逆波动率加权: vol范围=[{min(vol_dict.values()):.4f}, "
+                f"{max(vol_dict.values()):.4f}]"
+            )
+        else:
+            base_weight = 1.0 / n_stocks
+            weights = {code: base_weight for code in selected}
+
+        # 应用个股权重上限（逆波动率加权时跳过：风险平价本身就是风险控制，
+        # 强制 cap 会将所有权重截断到上限后归一化为等权，破坏风险平价效果）
+        if not self.use_inv_vol_weight:
+            weights = self.apply_weight_cap(weights, self.max_stock_weight)
 
         # 应用大盘趋势过滤系数（降仓）
         if market_scale < 1.0:

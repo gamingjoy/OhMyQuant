@@ -1,8 +1,8 @@
-# 行业轮动策略 v7 配置（行业短期风险过滤+严控风险, superseded by v8）
+# 行业轮动策略 v8 配置（双动量温和降仓, final）
 strategy_type: industry_rotation
-strategy_version: v7
-strategy_name: "行业轮动策略 industry_rotation_v7 (mf12_lowbeta_riskfilter20_mkt5, superseded)"
-description: "行业风险过滤+严控风险:12因子(含2反向风险)+20日行业风险过滤+大盘5/20日+沪深300 [superseded by v8]"
+strategy_version: v8
+strategy_name: "行业轮动策略 industry_rotation_v8 (mf12_lowbeta_riskfilter20_dualmom20_s0.5_t-0.03, final)"
+description: "双动量温和降仓:12因子+行业风险过滤+绝对动量(20日,阈值-3%,降仓50%)+沪深300 [final]"
 
 backtest:
   start_date: "2022-01-01"
@@ -31,6 +31,14 @@ selection:
     industry_risk_filter: true
     risk_filter_window: 20
     risk_filter_min_industries: 3
+    # 绝对动量（Dual Momentum）：20日收益<-3%时仓位×0.5（温和降仓，仅在大跌时触发）
+    absolute_momentum: true
+    absolute_momentum_window: 20
+    absolute_momentum_threshold: -0.03
+    absolute_momentum_scale: 0.5
+    # 逆波动率加权（Risk Parity）—— 经测试损害IS Sharpe(0.78→0.61)，已禁用
+    use_inv_vol_weight: false
+    inv_vol_window: 20
     use_factors: true
     factor_names:
       - Price1M

@@ -458,8 +458,9 @@ class BacktestEngine(BaseEngine):
                     )
 
                     if weights:
-                        # 应用组合约束
-                        weights = self.portfolio_optimizer.apply_weight_cap(weights)
+                        # selector 已在内部应用 weight cap + market_scale，
+                        # 此处不再调用 portfolio_optimizer.apply_weight_cap
+                        # （该方法的最终归一化会抹掉 market_scale 的降仓效果）
                         pool_weights[pool_name] = weights
                 except Exception as e:
                     logger.warning(f"选股失败 {pool_name} @ {date_str}: {e}")

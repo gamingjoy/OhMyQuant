@@ -1,14 +1,14 @@
-"""行业轮动策略 v7（行业短期风险过滤+严控风险）
+"""行业轮动策略 v8（双动量温和降仓）
 
-v6 问题：行业选择仅基于60+120日中长期动量，板块开始下跌时中长期动量仍为正，
-         无法及时规避高风险板块（如OOS期间持续持有有色金属）
-v7 改进：
-  - 新增行业短期风险过滤：用20日短期动量剔除近期下跌的行业
-    （当中长期动量仍为正但短期已转负时，及时退出）
-  - 强化反向风险因子：raw_beta -1.5→-2.0，residual_volatility -1.0→-1.5
-  - 降低行业集中度：max_industry_weight 0.30→0.25（分散风险）
-  - 大盘过滤更敏感：market_ma_short 10→5（更快响应下跌）
-  - 因子组合保持 v6 的12因子
+v7 问题：OOS下跌市Beta仍>1(1.07)，7月策略-9.07% vs 沪深300-5.25%跑输
+         MA均线过滤滞后，无法有效规避下跌市
+v8 改进（参考2025-2026最新研报）：
+  - 新增绝对动量(Dual Momentum, Antonacci)：20日收益<-3%时仓位×0.5
+    参考：Gary Antonacci双动量策略，绝对动量在下跌趋势中主动避险
+    参数选择：scale=0.5, threshold=-0.03（IS扫描最优，Sharpe 0.8006 > v7 0.7767）
+    逆波动率加权经测试损害IS Sharpe(0.78→0.61)，已禁用
+  - 保留v7的行业短期风险过滤+反向风险因子
+  - 因子组合保持12因子
 
 因子组合:
   动量(3): Price1M, Price3M, ROC20
@@ -23,22 +23,22 @@ from ohmyquant.strategy import register_strategy
 from ohmyquant.strategy.base import BaseStrategy
 
 
-@register_strategy("industry_rotation", "v7")
-class IndustryRotationStrategyV7(BaseStrategy):
-    """行业轮动策略 industry_rotation_v7 (mf12_lowbeta_riskfilter20_mkt5, superseded)"""
+@register_strategy("industry_rotation", "v8")
+class IndustryRotationStrategyV8(BaseStrategy):
+    """行业轮动策略 industry_rotation_v8 (mf12_lowbeta_riskfilter20_dualmom20_s0.5_t-0.03, final)"""
 
     @classmethod
     def from_version(
         cls, strategy_type: str, version: str, config: dict | None = None
-    ) -> "IndustryRotationStrategyV7":
-        if strategy_type != "industry_rotation" or version != "v7":
+    ) -> "IndustryRotationStrategyV8":
+        if strategy_type != "industry_rotation" or version != "v8":
             raise ValueError(f"不支持的策略版本: {strategy_type} {version}")
 
         base_config = {
             "strategy_type": "industry_rotation",
-            "strategy_version": "v7",
-            "strategy_name": "行业轮动策略 industry_rotation_v7 (mf12_lowbeta_riskfilter20_mkt5, superseded)",
-            "description": "行业风险过滤+严控风险:12因子(含2反向风险)+20日行业风险过滤+大盘5/20日+沪深300 [superseded by v8]",
+            "strategy_version": "v8",
+            "strategy_name": "行业轮动策略 industry_rotation_v8 (mf12_lowbeta_riskfilter20_dualmom20_s0.5_t-0.03, final)",
+            "description": "双动量温和降仓:12因子+行业风险过滤+绝对动量(20日,阈值-3%,降仓50%)+沪深300 [final]",
             "backtest": {
                 "start_date": "2022-01-01",
                 "end_date": "2025-12-31",
@@ -66,6 +66,14 @@ class IndustryRotationStrategyV7(BaseStrategy):
                     "industry_risk_filter": True,
                     "risk_filter_window": 20,
                     "risk_filter_min_industries": 3,
+                    # 绝对动量（Dual Momentum）：20日收益<-3%时仓位×0.5（温和降仓）
+                    "absolute_momentum": True,
+                    "absolute_momentum_window": 20,
+                    "absolute_momentum_threshold": -0.03,
+                    "absolute_momentum_scale": 0.5,
+                    # 逆波动率加权——经测试损害IS Sharpe，已禁用
+                    "use_inv_vol_weight": False,
+                    "inv_vol_window": 20,
                     "use_factors": True,
                     "factor_names": [
                         "Price1M", "Price3M", "ROC20",

@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from ohmyquant.strategy import StrategyRegistry, StrategyRunner
 
 OOS_START = "2026-06-01"
-OOS_END = "2026-07-15"
+OOS_END = "2026-07-16"
 
 
 def run_version_oos(version: str) -> dict:
