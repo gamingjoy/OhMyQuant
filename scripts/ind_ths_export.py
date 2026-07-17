@@ -1,13 +1,13 @@
-"""同花顺模拟盘交易流水导出（行业轮动策略 YCJ_industry_v5）
+"""同花顺模拟盘交易流水导出（行业轮动策略 ind_v5）
 
 从 OOS 回测结果生成同花顺 PMS 交易组合流水导入文件。
 每次调仓生成一个独立 xlsx 文件，便于逐日上传同花顺模拟盘。
 
 文件组织:
-  templates/ths_pms_template.xlsx                    # 同花顺模板
-  output/ths/YCJ_industry_v5/
-    20260601_build.xlsx                              # 建仓文件
-    20260608_rebalance.xlsx                          # 调仓文件
+  templates/ths_pms_template.xlsx          # 同花顺模板
+  output/ths/ind_v5/
+    20260601_build.xlsx                     # 建仓文件
+    20260608_rebalance.xlsx                 # 调仓文件
     ...
 
 流水格式（同花顺模板）:
@@ -37,7 +37,7 @@ from openpyxl import Workbook, load_workbook
 
 from ohmyquant.data.sources.duckdb_source import DuckDBSource
 
-STRATEGY_NAME = "YCJ_industry_v5"
+STRATEGY_NAME = "ind_v5"  # 完整名: ind_v5 (mf10_mom60_120_mkt20, final)
 DATA_ROOT = "D:/Work/Project/download_a_share/data"
 TEMPLATE_PATH = Path("templates/ths_pms_template.xlsx")
 OUTPUT_DIR = Path(f"output/ths/{STRATEGY_NAME}")

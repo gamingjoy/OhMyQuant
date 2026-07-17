@@ -21,7 +21,7 @@ from ohmyquant.strategy.base import BaseStrategy
 
 @register_strategy("ind", "v5")
 class IndRotationStrategyV5(BaseStrategy):
-    """行业轮动策略 v5：多因子选股 (mf10_mom60_120_top5_ind2_csi300_mkt20)"""
+    """行业轮动策略 ind_v5 (mf10_mom60_120_mkt20, final)"""
 
     @classmethod
     def from_version(
@@ -33,8 +33,8 @@ class IndRotationStrategyV5(BaseStrategy):
         base_config = {
             "strategy_type": "ind",
             "strategy_version": "v5",
-            "strategy_name": "行业轮动策略 v5",
-            "description": "多因子选股：60+120日行业动量+10因子个股评分,大盘20日过滤,沪深300",
+            "strategy_name": "行业轮动策略 ind_v5 (mf10_mom60_120_mkt20, final)",
+            "description": "多因子选股:10因子+60/120日行业动量+大盘20日过滤+沪深300 [final]",
             "backtest": {
                 "start_date": "2022-01-01",
                 "end_date": "2025-12-31",

@@ -27,7 +27,7 @@ from openpyxl import load_workbook
 from ohmyquant.data.sources.duckdb_source import DuckDBSource
 from ohmyquant.strategy import StrategyRegistry, StrategyRunner
 
-STRATEGY_NAME = "YCJ_industry_v5"
+STRATEGY_NAME = "ind_v5"  # 完整名: ind_v5 (mf10_mom60_120_mkt20, final)
 VERSION = "v5"
 DATA_ROOT = "D:/Work/Project/download_a_share/data"
 TEMPLATE_PATH = Path("templates/ths_pms_template.xlsx")
