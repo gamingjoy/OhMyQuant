@@ -41,9 +41,8 @@ Thumbs.db
 *.parquet
 *.parquet.tmp
 
-# Outputs / reports / results
-output/*
-!output/ths/
+# Outputs / reports / results (不提交到 GitHub)
+output/
 results/
 *.html
 *.png
