@@ -14,7 +14,7 @@ T日早晨运行：下载T-1数据后，运行本脚本检查是否需要调仓�
 from __future__ import annotations
 
 import argparse
-import json
+import logging
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -26,6 +26,8 @@ from openpyxl import load_workbook
 
 from ohmyquant.data.sources.duckdb_source import DuckDBSource
 from ohmyquant.strategy import StrategyRegistry, StrategyRunner
+
+logger = logging.getLogger(__name__)
 
 STRATEGY_NAME = "industry_rotation_v5"  # 完整名: industry_rotation_v5 (mf10_mom60_120_mkt20, final)
 VERSION = "v5"
@@ -104,18 +106,41 @@ def run_oos_backtest(end_date: str) -> dict:
 
 
 def get_open_prices(source: DuckDBSource, codes: list[str], date_str: str) -> dict[str, float]:
-    """获取指定日期开盘价"""
-    df = source.load_daily_price(codes, date_str, date_str, adjust="post")
-    if df is None or len(df) == 0:
-        df = source.load_daily_price(codes, date_str, date_str, adjust="none")
-    if df is None or len(df) == 0:
-        return {}
+    """获取指定日期开盘价（实际市场价格，非复权），缺失时用最近交易日收盘价替代
+
+    同花顺 PMS 需要实际市场价格成交，不能用后复权价格。
+    停牌/退市等导致当日无开盘价时，用最近交易日收盘价替代，避免漏买漏卖。
+    """
+    # 用 adjust="none" 获取实际市场价格（非复权），同花顺按实际价成交
+    df = source.load_daily_price(codes, date_str, date_str, adjust="none")
+
     result: dict[str, float] = {}
-    for row in df.iter_rows(named=True):
-        code = row.get("code", "")
-        open_price = row.get("open")
-        if open_price and isinstance(open_price, (int, float)):
-            result[code] = float(open_price)
+    if df is not None and len(df) > 0:
+        for row in df.iter_rows(named=True):
+            code = row.get("code", "")
+            open_price = row.get("open")
+            if open_price and isinstance(open_price, (int, float)) and open_price > 0:
+                result[code] = float(open_price)
+
+    # 对缺失开盘价的股票，向前查找最近交易日的收盘价替代
+    missing_codes = [c for c in codes if c not in result]
+    if missing_codes:
+        dt = datetime.strptime(date_str, "%Y-%m-%d")
+        # 向前查找最多 10 个自然日，覆盖周末和短假期
+        for days_back in range(1, 11):
+            still_missing = [c for c in missing_codes if c not in result]
+            if not still_missing:
+                break
+            prev_date = (dt - timedelta(days=days_back)).strftime("%Y-%m-%d")
+            prev_df = source.load_daily_price(still_missing, prev_date, prev_date, adjust="none")
+            if prev_df is not None and len(prev_df) > 0:
+                for row in prev_df.iter_rows(named=True):
+                    code = row.get("code", "")
+                    close_price = row.get("close")
+                    if close_price and isinstance(close_price, (int, float)) and close_price > 0:
+                        result[code] = float(close_price)
+                        logger.debug(f"{date_str} {code}: 开盘价缺失，用 {prev_date} 收盘价 {close_price} 替代")
+
     return result
 
 
@@ -251,10 +276,9 @@ def replay_history(
             break  # 只回放 check_date 之前的
 
         holdings = entry["holdings"]
-        codes = list(holdings.keys())
-        open_prices = get_open_prices(source, codes, date_str)
-        if not open_prices:
-            continue
+        # 获取所有股票的开盘价（当前持仓 + 目标持仓），避免漏卖漏买
+        all_codes = list(set(list(prev_shares.keys()) + list(holdings.keys())))
+        open_prices = get_open_prices(source, all_codes, date_str)
 
         is_build = (len(prev_shares) == 0)
         _, prev_shares, prev_cash = generate_trades(
@@ -341,8 +365,9 @@ def main():
     else:
         print(f"  当前持仓: {len(prev_shares)} 只, 现金 {prev_cash:,.0f}")
 
-    codes = list(last_holdings.keys())
-    open_prices = get_open_prices(source, codes, check_date)
+    # 获取所有股票的开盘价（当前持仓 + 目标持仓），避免漏卖漏买
+    all_codes = list(set(list(prev_shares.keys()) + list(last_holdings.keys())))
+    open_prices = get_open_prices(source, all_codes, check_date)
     if not open_prices:
         print(f"无法获取{check_date}开盘价，无法生成交易文件")
         return
