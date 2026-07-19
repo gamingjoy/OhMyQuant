@@ -107,10 +107,11 @@ class BaseAllocator(ABC):
 
         rebal_dates: set = set()
         prev_key = None
+        # weekly/biweekly 共用：本周首个交易日（兜底用）+ 是否已命中目标weekday
+        week_pending = None
+        week_done = False
         # biweekly 隔周调仓：触发周内命中 weekday 调仓，无 weekday 时取首日兜底
         biweekly_trigger = False
-        biweekly_pending = None
-        biweekly_week_done = False
 
         for date_item in dates:
             # 转换为 datetime 对象
@@ -125,39 +126,47 @@ class BaseAllocator(ABC):
 
             if freq == "weekly":
                 key = (dt.isocalendar()[0], dt.isocalendar()[1])
-                if key != prev_key and dt.weekday() == weekday:
-                    rebal_dates.add(date_item)
+                if key != prev_key:
+                    # 新的一周：提交上周的兜底（若未命中 weekday）
+                    if not week_done and week_pending is not None:
+                        rebal_dates.add(week_pending)
+                    week_pending = None
+                    week_done = False
                     prev_key = key
-                elif key != prev_key:
-                    # 如果指定的 weekday 不存在，取该周第一个交易日
-                    rebal_dates.add(date_item)
-                    prev_key = key
+                if not week_done:
+                    if dt.weekday() == weekday:
+                        # 命中目标 weekday → 调仓
+                        rebal_dates.add(date_item)
+                        week_done = True
+                        week_pending = None
+                    elif week_pending is None:
+                        # 记录本周首个交易日作为兜底（目标 weekday 是假期时使用）
+                        week_pending = date_item
             elif freq == "biweekly":
                 # 隔周调仓：每两周的指定 weekday 调仓一次
                 iso = dt.isocalendar()
                 key = (iso[0], iso[1])
                 if key != prev_key:
                     # 新的一周：先提交上一触发周的兜底日期（若未命中 weekday）
-                    # biweekly_trigger 此时仍是上一周的状态
                     if (
                         biweekly_trigger
-                        and biweekly_pending is not None
-                        and not biweekly_week_done
+                        and not week_done
+                        and week_pending is not None
                     ):
-                        rebal_dates.add(biweekly_pending)
-                    biweekly_pending = None
-                    biweekly_week_done = False
+                        rebal_dates.add(week_pending)
+                    week_pending = None
+                    week_done = False
                     # 翻转触发标志
                     biweekly_trigger = not biweekly_trigger
                     prev_key = key
-                if biweekly_trigger and not biweekly_week_done:
+                if biweekly_trigger and not week_done:
                     if dt.weekday() == weekday:
                         rebal_dates.add(date_item)
-                        biweekly_week_done = True
-                        biweekly_pending = None
-                    elif biweekly_pending is None:
+                        week_done = True
+                        week_pending = None
+                    elif week_pending is None:
                         # 记录本周首个交易日作为兜底
-                        biweekly_pending = date_item
+                        week_pending = date_item
             elif freq == "monthly":
                 key = (dt.year, dt.month)
                 if key != prev_key:
@@ -176,9 +185,12 @@ class BaseAllocator(ABC):
                     rebal_dates.add(date_item)
                     prev_key = key
 
-        # 提交最后一周的兜底
-        if biweekly_trigger and biweekly_pending is not None and not biweekly_week_done:
-            rebal_dates.add(biweekly_pending)
+        # 提交最后一周/最后触发周的兜底（目标 weekday 是假期时使用）
+        if not week_done and week_pending is not None:
+            if freq == "weekly":
+                rebal_dates.add(week_pending)
+            elif freq == "biweekly" and biweekly_trigger:
+                rebal_dates.add(week_pending)
 
         return rebal_dates
 
