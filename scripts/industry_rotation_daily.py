@@ -29,8 +29,8 @@ from ohmyquant.strategy import StrategyRegistry, StrategyRunner
 
 logger = logging.getLogger(__name__)
 
-STRATEGY_NAME = "industry_rotation_v8"  # 完整名: industry_rotation_v8 (mf12_lowbeta_riskfilter20_dualmom20_s0.5_t-0.03, final)
-VERSION = "v8"
+STRATEGY_NAME = "industry_rotation_v9"  # 完整名: industry_rotation_v9 (mf12_lowbeta_riskfilter20_dualmom20_rrg220_30, final)
+VERSION = "v9"
 DATA_ROOT = "D:/Work/Project/download_a_share/data"
 TEMPLATE_PATH = Path("templates/ths_pms_template.xlsx")
 OUTPUT_DIR = Path(f"output/ths/{STRATEGY_NAME}")

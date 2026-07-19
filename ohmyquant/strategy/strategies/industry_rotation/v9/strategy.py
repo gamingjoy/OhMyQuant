@@ -1,14 +1,22 @@
-"""行业轮动策略 v8（双动量温和降仓）
+"""行业轮动策略 v9（RRG 相对强度动量）
 
-v7 问题：OOS下跌市Beta仍>1(1.07)，7月策略-9.07% vs 沪深300-5.25%跑输
-         MA均线过滤滞后，无法有效规避下跌市
-v8 改进（参考2025-2026最新研报）：
-  - 新增绝对动量(Dual Momentum, Antonacci)：20日收益<-3%时仓位×0.5
-    参考：Gary Antonacci双动量策略，绝对动量在下跌趋势中主动避险
-    参数选择：scale=0.5, threshold=-0.03（IS扫描最优，Sharpe 0.8006 > v7 0.7767）
-    逆波动率加权经测试损害IS Sharpe(0.78→0.61)，已禁用
-  - 保留v7的行业短期风险过滤+反向风险因子
-  - 因子组合保持12因子
+v8 问题：OOS 收益仍为负（-2.72%），超额仅 +0.29%
+         6/22 选了电子/通信/建筑材料，绝对动量（60/120日）仍正但7月下跌
+         根因：中长期绝对动量无法识别短期相对强度已转弱的行业
+
+v9 改进（参考 2026 量化轮动策略报告 RRG 框架）：
+  - 新增 RRG（Relative Rotation Graph）行业选择层：
+    * RS-Ratio = 行业均价/沪深300 的 220 日标准化值（>100 表示长期跑赢大盘）
+    * RS-Momentum = RS-Ratio 的 30 日动量（>100 表示相对强度在加速）
+    * 行业选择：按 RS-Ratio 取候选，剔除 RS-Momentum<100 的疲软象限
+    * RS-Momentum 是先行指标，能在行业还领先时发出转弱预警
+  - 30日窗口（vs 研报60日）：能更早识别短期转弱，6/22 OOS能剔除建筑材料(RS-Mom=97.34<100)
+  - 保留 v8 所有特性：12因子选股、行业短期风险过滤、绝对动量、大盘过滤
+
+研报参考：
+  - 2026 量化轮动策略报告：RRG 框架下行业与ETF轮动策略构建
+  - RRG 第一象限策略：年化18.34%, Sharpe 0.72, 最大回撤-29.82%
+  - RS-Ratio 回看 220 日为研报最优参数；RS-Mom 30日为本策略适配改进
 
 因子组合:
   动量(3): Price1M, Price3M, ROC20
@@ -23,22 +31,22 @@ from ohmyquant.strategy import register_strategy
 from ohmyquant.strategy.base import BaseStrategy
 
 
-@register_strategy("industry_rotation", "v8")
-class IndustryRotationStrategyV8(BaseStrategy):
-    """行业轮动策略 industry_rotation_v8 (mf12_lowbeta_riskfilter20_dualmom20_s0.5_t-0.03, superseded)"""
+@register_strategy("industry_rotation", "v9")
+class IndustryRotationStrategyV9(BaseStrategy):
+    """行业轮动策略 industry_rotation_v9 (mf12_lowbeta_riskfilter20_dualmom20_rrg220_30, iter)"""
 
     @classmethod
     def from_version(
         cls, strategy_type: str, version: str, config: dict | None = None
-    ) -> "IndustryRotationStrategyV8":
-        if strategy_type != "industry_rotation" or version != "v8":
+    ) -> "IndustryRotationStrategyV9":
+        if strategy_type != "industry_rotation" or version != "v9":
             raise ValueError(f"不支持的策略版本: {strategy_type} {version}")
 
         base_config = {
             "strategy_type": "industry_rotation",
-            "strategy_version": "v8",
-            "strategy_name": "行业轮动策略 industry_rotation_v8 (mf12_lowbeta_riskfilter20_dualmom20_s0.5_t-0.03, final)",
-            "description": "双动量温和降仓:12因子+行业风险过滤+绝对动量(20日,阈值-3%,降仓50%)+沪深300 [final]",
+            "strategy_version": "v9",
+            "strategy_name": "行业轮动策略 industry_rotation_v9 (mf12_lowbeta_riskfilter20_dualmom20_rrg220_30, iter)",
+            "description": "RRG相对强度动量:12因子+行业风险过滤+绝对动量+RRG(RS-Ratio220日+RS-Momentum30日)领先象限+沪深300 [iter]",
             "backtest": {
                 "start_date": "2022-01-01",
                 "end_date": "2025-12-31",
@@ -74,6 +82,13 @@ class IndustryRotationStrategyV8(BaseStrategy):
                     # 逆波动率加权——经测试损害IS Sharpe，已禁用
                     "use_inv_vol_weight": False,
                     "inv_vol_window": 20,
+                    # RRG 框架（NEW in v9）
+                    # 30日窗口能在6/22 OOS识别建筑材料短期转弱（RS-Mom=97.34<100）
+                    "use_rrg": True,
+                    "rs_ratio_window": 220,
+                    "rs_momentum_window": 30,
+                    "rrg_momentum_threshold": 100.0,
+                    "rrg_min_industries": 3,
                     "use_factors": True,
                     "factor_names": [
                         "Price1M", "Price3M", "ROC20",

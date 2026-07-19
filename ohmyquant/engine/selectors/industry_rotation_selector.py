@@ -100,6 +100,18 @@ class IndustryRotationSelector(BaseSelector):
         # 逆波动率加权（风险平价）：替代等权，降低高波动股权重
         self.use_inv_vol_weight: bool = ir_cfg.get("use_inv_vol_weight", False)
         self.inv_vol_window: int = ir_cfg.get("inv_vol_window", 20)
+        # RRG 框架（Relative Rotation Graph）：用相对强度替代绝对动量选行业
+        # RS-Ratio = RS / SMA(RS, N) × 100，>100 表示行业长期跑赢大盘
+        # RS-Momentum = RS-Ratio 的 M 日动量 × 100，>100 表示相对强度在加速
+        # 研报参考：2026 量化轮动策略报告（RRG 框架下行业轮动），年化18.34%, Sharpe 0.72
+        # 核心价值：RS-Momentum 是先行指标，能在行业还领先时发出转弱预警
+        self.use_rrg: bool = ir_cfg.get("use_rrg", False)
+        self.rs_ratio_window: int = ir_cfg.get("rs_ratio_window", 220)
+        self.rs_momentum_window: int = ir_cfg.get("rs_momentum_window", 60)
+        self.rrg_momentum_threshold: float = ir_cfg.get(
+            "rrg_momentum_threshold", 100.0
+        )  # RS-Momentum >= 100 表示相对强度在加速
+        self.rrg_min_industries: int = ir_cfg.get("rrg_min_industries", 3)
         # 多因子选股
         self.use_factors: bool = ir_cfg.get("use_factors", False)
         self.factor_names: list[str] = ir_cfg.get("factor_names", [])
@@ -117,6 +129,7 @@ class IndustryRotationSelector(BaseSelector):
         self._factor_data: pl.DataFrame | None = None
         self._ml_model: Any = None
         self._ml_last_train_idx: int = -999
+        self._rrg_table: pl.DataFrame | None = None  # RRG 缓存
 
     def _load_industry_map(self) -> dict[str, str]:
         """惰性加载行业映射（申万一级行业）"""
@@ -159,6 +172,110 @@ class IndustryRotationSelector(BaseSelector):
             logger.warning(f"大盘指数加载失败: {e}")
             self._market_close = None
         return self._market_close
+
+    def _compute_rrg_table(
+        self, close: pl.DataFrame
+    ) -> pl.DataFrame | None:
+        """计算所有日期所有行业的 RS-Ratio 和 RS-Momentum（RRG 框架）
+
+        RRG（Relative Rotation Graph）核心公式：
+            RS = 行业均价 / 大盘指数 close（相对强度比值）
+            RS-Ratio = RS / SMA(RS, N) × 100  （>100 表示行业长期跑赢大盘）
+            RS-Momentum = RS-Ratio / RS-Ratio.shift(M) × 100  （>100 表示相对强度在加速）
+
+        研报参考: 2026 量化轮动策略报告（RRG 框架下行业轮动）
+            - RS-Ratio 回看 220 日，RS-Momentum 回看 60 日为最优参数
+            - 第一象限（领先）策略年化 18.34%, Sharpe 0.72
+            - RS-Momentum 是先行指标，能在行业还领先时发出转弱预警
+
+        Args:
+            close: 候选池收盘价宽表（date, code1, code2, ...）
+
+        Returns:
+            DataFrame: date, industry, rs_ratio, rs_momentum（缓存）
+        """
+        if self._rrg_table is not None:
+            return self._rrg_table
+
+        market_close = self._load_market_close()
+        if market_close is None:
+            return None
+
+        industry_map = self._load_industry_map()
+        if not industry_map:
+            return None
+
+        try:
+            # 1. close 宽表转长表 + 行业映射
+            close_long = close.melt(
+                id_vars="date", variable_name="code", value_name="close"
+            ).filter(
+                pl.col("close").is_not_null()
+                & pl.col("code").is_in(list(industry_map.keys()))
+            )
+
+            ind_df = pl.DataFrame({
+                "code": list(industry_map.keys()),
+                "industry": list(industry_map.values()),
+            })
+            close_long = close_long.join(ind_df, on="code", how="inner")
+
+            # 2. 按日期+行业聚合，计算行业均价
+            industry_daily = close_long.group_by(["date", "industry"]).agg(
+                pl.col("close").mean().alias("industry_close")
+            )
+
+            # 3. 统一日期类型，join 大盘 close
+            industry_daily = industry_daily.with_columns(
+                pl.col("date").cast(pl.Date).alias("date_d")
+            )
+            market_df = market_close.with_columns(
+                pl.col("date").cast(pl.Date).alias("date_d")
+            ).select(["date_d", "close"]).rename({"close": "market_close"})
+
+            industry_daily = industry_daily.join(
+                market_df, on="date_d", how="inner"
+            )
+
+            # 4. 计算 RS = industry_close / market_close
+            industry_daily = industry_daily.with_columns(
+                (pl.col("industry_close") / pl.col("market_close")).alias("rs")
+            ).sort(["industry", "date"])
+
+            # 5. 计算 RS-Ratio = RS / SMA(RS, N) × 100
+            industry_daily = industry_daily.with_columns(
+                pl.col("rs")
+                .rolling_mean(window_size=self.rs_ratio_window)
+                .over("industry")
+                .alias("rs_sma")
+            ).with_columns(
+                (pl.col("rs") / pl.col("rs_sma") * 100.0).alias("rs_ratio")
+            )
+
+            # 6. 计算 RS-Momentum = RS-Ratio / RS-Ratio.shift(M) × 100
+            industry_daily = industry_daily.with_columns(
+                (
+                    pl.col("rs_ratio")
+                    / pl.col("rs_ratio").shift(self.rs_momentum_window)
+                    * 100.0
+                ).alias("rs_momentum")
+            )
+
+            self._rrg_table = industry_daily.select(
+                ["date", "industry", "rs_ratio", "rs_momentum"]
+            )
+
+            logger.info(
+                f"RRG 计算完成: {len(self._rrg_table)} 行, "
+                f"{self._rrg_table['industry'].n_unique()} 行业, "
+                f"rs_ratio_window={self.rs_ratio_window}, "
+                f"rs_momentum_window={self.rs_momentum_window}"
+            )
+        except Exception as e:
+            logger.warning(f"RRG 计算失败: {e}")
+            self._rrg_table = None
+
+        return self._rrg_table
 
     def _load_factor_data(self) -> pl.DataFrame | None:
         """惰性加载聚宽因子宽表数据"""
@@ -662,6 +779,64 @@ class IndustryRotationSelector(BaseSelector):
 
         if not top_industries:
             return None
+
+        # RRG 行业选择：用相对强度（RS-Ratio）+ 相对强度动量（RS-Momentum）替代绝对动量
+        # 研报参考：2026 量化轮动策略报告（RRG 框架下行业轮动）
+        # 核心：RS-Momentum 是先行指标，能在行业绝对动量仍正但相对强度已转弱时提前剔除
+        # 解决 v8 OOS 6/22 选了电子/通信/建筑材料（绝对动量仍正但7月下跌）的问题
+        if self.use_rrg:
+            rrg_table = self._compute_rrg_table(close)
+            if rrg_table is not None:
+                # 取 select_idx 对应日期
+                select_date_raw = close.row(select_idx, named=True).get("date")
+                if hasattr(select_date_raw, "date"):
+                    select_date_obj = select_date_raw.date()
+                else:
+                    select_date_obj = select_date_raw
+
+                # 取该日所有行业的 RRG 数据
+                rrg_at_date = rrg_table.filter(
+                    (pl.col("date").cast(pl.Date) == select_date_obj)
+                    & pl.col("rs_ratio").is_not_null()
+                    & pl.col("rs_momentum").is_not_null()
+                )
+
+                if len(rrg_at_date) > 0:
+                    # 步骤1: 按 RS-Ratio 降序取候选（扩大候选池到 top_industries × 2）
+                    rrg_sorted = rrg_at_date.sort("rs_ratio", descending=True)
+                    candidate_n = min(
+                        len(rrg_sorted),
+                        self.top_industries * 2,
+                    )
+                    rrg_candidates = rrg_sorted.head(candidate_n)
+
+                    # 步骤2: 从候选中筛选 RS-Momentum >= 阈值（领先象限）
+                    leading = rrg_candidates.filter(
+                        pl.col("rs_momentum") >= self.rrg_momentum_threshold
+                    )
+
+                    # 步骤3: 至少保留 rrg_min_industries 个，不足时按 RS-Ratio 排名补充
+                    if len(leading) >= self.rrg_min_industries:
+                        new_top = leading["industry"].to_list()[
+                            : self.top_industries
+                        ]
+                    else:
+                        # 不足时用 RS-Ratio 排名（绝对强度优先）
+                        new_top = rrg_sorted["industry"].to_list()[
+                            : self.top_industries
+                        ]
+
+                    if new_top:
+                        removed_by_rrg = set(top_industries) - set(new_top)
+                        added_by_rrg = set(new_top) - set(top_industries)
+                        if removed_by_rrg or added_by_rrg:
+                            logger.info(
+                                f"RRG 行业重选: 剔除绝对动量入选但相对强度转弱的 "
+                                f"{list(removed_by_rrg)}，"
+                                f"新增相对强度领先的 {list(added_by_rrg)}，"
+                                f"最终 Top-{self.top_industries}: {new_top}"
+                            )
+                        top_industries = new_top
 
         # 行业短期风险过滤：剔除近期下跌的行业（规避高风险板块）
         # 当行业中长期动量仍为正但短期已转负时，及时退出
