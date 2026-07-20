@@ -1,0 +1,154 @@
+# 行业轮动策略 v12 配置（残差动量 + 扩展ML因子库 + 中证500候选池）
+# C方向：从10因子扩展到40因子，重新尝试LightGBM
+# 核心改进：加入波动率/成长/Beneish等维度，充分利用聚宽260因子库
+strategy_type: industry_rotation
+strategy_version: v12
+strategy_name: "行业轮动策略 industry_rotation_v12 (residual_ml40_csi500_rrg220_30, iter)"
+description: "残差动量+扩展ML40因子+中证500:残差动量+RRG+绝对动量+LightGBM(40因子,150树) [iter]"
+
+backtest:
+  start_date: "2022-01-01"
+  end_date: "2025-12-31"
+  data_start_date: "2018-01-01"
+  transaction_cost: 0.001
+
+selection:
+  method: industry_rotation
+  top_n: 10
+  max_stock_weight: 0.10
+  industry_rotation:
+    data_root: "D:/Work/Project/download_a_share/data"
+    top_industries: 5
+    stocks_per_industry: 2
+    momentum_short: 60
+    momentum_long: 120
+    weight_short: 0.6
+    weight_long: 0.4
+    max_industry_weight: 0.25
+    market_filter: true
+    market_index: "000905.XSHG"
+    market_ma_short: 5
+    market_ma_long: 20
+    industry_risk_filter: true
+    risk_filter_window: 20
+    risk_filter_min_industries: 3
+    absolute_momentum: true
+    absolute_momentum_window: 20
+    absolute_momentum_threshold: -0.03
+    absolute_momentum_scale: 0.5
+    use_inv_vol_weight: false
+    inv_vol_window: 20
+    use_rrg: true
+    rs_ratio_window: 220
+    rs_momentum_window: 30
+    rrg_momentum_threshold: 100.0
+    rrg_min_industries: 3
+    # 残差动量（v10）
+    use_residual_momentum: true
+    residual_beta_factor: "raw_beta"
+    residual_beta_default: 1.0
+    # 拥挤度过滤（关闭，v11测试无效）
+    use_crowding_filter: false
+    # ML选股（NEW in v12, 扩展到40因子）
+    use_ml: true
+    ml_train_window: 252
+    ml_retrain_freq: 21
+    ml_target_horizon: 20
+    ml_n_estimators: 150
+    ml_max_depth: 3
+    ml_learning_rate: 0.05
+    # 多因子选股（ML失败时回退）
+    use_factors: true
+    # 扩展到40因子（动量6+成交量4+波动率8+质量5+价值3+成长5+杠杆3+Beneish6）
+    factor_names:
+      # 动量类(6)
+      - Price1M
+      - Price3M
+      - Price1Y
+      - ROC20
+      - ROC60
+      - momentum
+      # 成交量类(4)
+      - DAVOL10
+      - money_flow_20
+      - single_day_VPT
+      - single_day_VPT_6
+      # 波动率类(8)
+      - VOL20
+      - VOL60
+      - Variance20
+      - Variance60
+      - sharpe_ratio_20
+      - sharpe_ratio_60
+      - raw_beta
+      - residual_volatility
+      # 质量类(5)
+      - gross_income_ratio
+      - roe_ttm
+      - roa_ttm
+      - roic_ttm
+      - net_profit_ratio
+      # 价值类(3)
+      - earnings_to_price_ratio
+      - book_to_price_ratio
+      - cash_flow_to_price_ratio
+      # 成长类(5)
+      - operating_revenue_growth_rate
+      - net_profit_growth_rate
+      - operating_profit_growth_rate
+      - sales_growth
+      - earnings_growth
+      # 杠杆类(3)
+      - book_leverage
+      - debt_to_asset_ratio
+      - debt_to_equity_ratio
+      # Beneish类(6) - 财务造假识别
+      - ACCA
+      - DSRI
+      - GMI
+      - MLEV
+      - LVGI
+      - SGAI
+    # factor_weights 仅 use_factors 模式下生效（ML模式自动学习权重）
+    factor_weights:
+      Price1M: 1.0
+      Price3M: 1.0
+      ROC20: 1.0
+      DAVOL10: 1.0
+      money_flow_20: 1.0
+      gross_income_ratio: 1.0
+      roe_ttm: 1.0
+      net_profit_ratio: 1.0
+      earnings_to_price_ratio: 1.0
+      book_to_price_ratio: 1.0
+      raw_beta: -2.0
+      residual_volatility: -1.5
+
+portfolio:
+  max_stock_weight: 0.10
+  max_industry_weight: 0.25
+  min_stocks: 5
+
+risk:
+  method: regime_adaptive
+  target_vol: 0.12
+  lookback: 20
+  min_exposure_scale: 0.3
+
+rebalance:
+  frequency: weekly
+  weekday: 0
+  method: cost_benefit
+  cost_model:
+    name: stock_cn
+
+factors:
+  - mom_1m
+
+pools:
+  stocks:
+    index: "000905.XSHG"
+
+data:
+  source: duckdb
+  data_root: "D:/Work/Project/download_a_share/data"

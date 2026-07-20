@@ -112,6 +112,43 @@ class IndustryRotationSelector(BaseSelector):
             "rrg_momentum_threshold", 100.0
         )  # RS-Momentum >= 100 表示相对强度在加速
         self.rrg_min_industries: int = ir_cfg.get("rrg_min_industries", 3)
+        # 残差动量（Residual Momentum, 华泰金工）
+        # 核心：剔除市场Beta暴露后的特异性动量
+        # residual_return_N = stock_return_N - raw_beta * market_return_N
+        # 研报参考：华泰金工《残差动量行业轮动》年化超额12.90%
+        # 优点：剔除市场Beta后，更能反映股票/行业自身的强势，避免高Beta股虚假动量
+        # 实现要点：用聚宽预计算的 raw_beta 因子做正交化
+        self.use_residual_momentum: bool = ir_cfg.get("use_residual_momentum", False)
+        self.residual_beta_factor: str = ir_cfg.get(
+            "residual_beta_factor", "raw_beta"
+        )  # 用作Beta的因子名
+        self.residual_beta_default: float = ir_cfg.get(
+            "residual_beta_default", 1.0
+        )  # Beta缺失时的默认值
+        # 拥挤度过滤（Crowding Filter, 华泰金工+西南证券）
+        # 核心：高拥挤行业（量价极度活跃）容易发生动量崩盘，应剔除或切换到反转
+        # 研报参考：
+        #   - 华泰金工《行业拥挤度4指标模型》：4个量价指标95%分位触发，3-4个触发=高拥挤
+        #   - 西南证券《拥挤度动态分域》：非拥挤用动量、高拥挤用反转
+        # 实现：3个指标（VOL20/turnover_volatility/Skewness20）取近250日95%分位
+        #       >=2个触发=高拥挤，剔除该行业
+        self.use_crowding_filter: bool = ir_cfg.get("use_crowding_filter", False)
+        self.crowding_window: int = ir_cfg.get(
+            "crowding_window", 250
+        )  # 拥挤度分位回看窗口
+        self.crowding_threshold: float = ir_cfg.get(
+            "crowding_threshold", 0.95
+        )  # 95%分位触发
+        self.crowding_min_triggers: int = ir_cfg.get(
+            "crowding_min_triggers", 2
+        )  # 至少2个指标触发=高拥挤
+        self.crowding_min_industries: int = ir_cfg.get(
+            "crowding_min_industries", 3
+        )  # 至少保留N个行业
+        self.crowding_factors: list[str] = ir_cfg.get(
+            "crowding_factors",
+            ["VOL20", "turnover_volatility", "Skewness20"],
+        )  # 拥挤度指标因子名
         # 多因子选股
         self.use_factors: bool = ir_cfg.get("use_factors", False)
         self.factor_names: list[str] = ir_cfg.get("factor_names", [])
@@ -283,17 +320,26 @@ class IndustryRotationSelector(BaseSelector):
             return self._factor_data
         # use_factors 或 use_ml 任一启用时都需要加载因子数据
         # （ML 用因子作为特征，不应依赖 use_factors 标志）
-        if not self.factor_names or (not self.use_factors and not self.use_ml):
+        # 拥挤度过滤也需要加载 crowding_factors
+        need_load = (
+            (self.use_factors or self.use_ml) and self.factor_names
+        ) or (self.use_crowding_filter and self.crowding_factors)
+        if not need_load:
             return None
         try:
             from ...data.sources.duckdb_source import DuckDBSource
 
             source = DuckDBSource({"data_root": self.data_root})
-            df = source.load_factor_wide(factor_names=self.factor_names)
+            # 加载 factor_names + crowding_factors 的并集（去重）
+            all_factors = list(
+                dict.fromkeys(self.factor_names + self.crowding_factors)
+            )
+            df = source.load_factor_wide(factor_names=all_factors)
             if df is not None and len(df) > 0:
                 self._factor_data = df.sort("date")
                 logger.info(
-                    f"因子数据加载: {len(df)} 行, {len(self.factor_names)} 个因子"
+                    f"因子数据加载: {len(df)} 行, {len(all_factors)} 个因子 "
+                    f"(选股{len(self.factor_names)}+拥挤度{len(self.crowding_factors)})"
                 )
         except Exception as e:
             logger.warning(f"因子数据加载失败: {e}")
@@ -459,6 +505,229 @@ class IndustryRotationSelector(BaseSelector):
                 )
 
         return ma_scale
+
+    def _compute_residual_momentum(
+        self,
+        select_idx: int,
+        close: pl.DataFrame,
+        stock_codes: list[str],
+        mom_short: pl.DataFrame,
+        mom_long: pl.DataFrame,
+    ) -> tuple[dict[str, float], dict[str, float]]:
+        """计算残差动量（剔除市场Beta暴露）
+
+        残差动量 = stock_return - raw_beta * market_return
+
+        研报参考：华泰金工《残差动量行业轮动》年化超额12.90%
+        剔除市场Beta后，更能反映股票自身的强势，避免高Beta股虚假动量
+
+        Args:
+            select_idx: 选股截面索引（用 t-1 数据）
+            close: 候选池收盘价宽表（用于获取 select_date）
+            stock_codes: 候选股票列表
+            mom_short: 短期动量宽表 close.shift(momentum_short)
+            mom_long: 长期动量宽表 close.shift(momentum_long)
+
+        Returns:
+            (residual_short_dict, residual_long_dict)
+            每个dict: {code: residual_momentum}
+        """
+        # 1. 获取选股日
+        select_date_raw = close.row(select_idx, named=True).get("date")
+        if hasattr(select_date_raw, "date"):
+            select_date_obj = select_date_raw.date()
+        else:
+            select_date_obj = select_date_raw
+
+        # 2. 加载 raw_beta 因子截面
+        factor_data = self._load_factor_data()
+        beta_dict: dict[str, float] = {}
+        if factor_data is not None:
+            # 取 select_date 当天或之前最近的因子数据
+            factor_before = factor_data.filter(
+                pl.col("date").dt.date() <= select_date_obj
+            )
+            if len(factor_before) > 0:
+                # 取每个code最新截面
+                beta截面 = (
+                    factor_before.sort("date", descending=True)
+                    .group_by("code")
+                    .first()
+                )
+                beta截面 = beta截面.filter(pl.col("code").is_in(stock_codes))
+                if self.residual_beta_factor in beta截面.columns:
+                    for row in beta截面.iter_rows(named=True):
+                        v = row.get(self.residual_beta_factor)
+                        if v is not None and not (isinstance(v, float) and np.isnan(v)):
+                            beta_dict[row["code"]] = float(v)
+
+        # 3. 获取市场收益率（短期/长期）
+        market_close = self._load_market_close()
+        if market_close is None:
+            # 无大盘数据，回退到简单动量
+            short_row = mom_short.row(select_idx, named=True)
+            long_row = mom_long.row(select_idx, named=True)
+            return (
+                {c: float(short_row.get(c, 0) or 0) for c in stock_codes},
+                {c: float(long_row.get(c, 0) or 0) for c in stock_codes},
+            )
+
+        # 取大盘在 select_date 之前（含当天）的数据
+        market_before = market_close.filter(
+            pl.col("date").dt.date() <= select_date_obj
+        )
+        if len(market_before) < self.momentum_long + 1:
+            # 数据不足，回退到简单动量
+            short_row = mom_short.row(select_idx, named=True)
+            long_row = mom_long.row(select_idx, named=True)
+            return (
+                {c: float(short_row.get(c, 0) or 0) for c in stock_codes},
+                {c: float(long_row.get(c, 0) or 0) for c in stock_codes},
+            )
+
+        prices = market_before["close"].to_list()
+        # 与 stock_mom 对齐：用 t-1 截面，所以market_return也用 t-1 截面
+        market_ret_short = prices[-1] / prices[-self.momentum_short - 1] - 1
+        market_ret_long = prices[-1] / prices[-self.momentum_long - 1] - 1
+
+        # 4. 计算残差动量
+        short_row = mom_short.row(select_idx, named=True)
+        long_row = mom_long.row(select_idx, named=True)
+
+        residual_short: dict[str, float] = {}
+        residual_long: dict[str, float] = {}
+        n_beta_used = 0
+        for code in stock_codes:
+            s = short_row.get(code)
+            l = long_row.get(code)
+            if s is None or l is None:
+                continue
+            if not (isinstance(s, (int, float)) and isinstance(l, (int, float))):
+                continue
+            if np.isnan(s) or np.isnan(l):
+                continue
+            beta = beta_dict.get(code, self.residual_beta_default)
+            if code in beta_dict:
+                n_beta_used += 1
+            # 残差动量 = 个股收益 - beta * 市场收益
+            residual_short[code] = float(s) - beta * market_ret_short
+            residual_long[code] = float(l) - beta * market_ret_long
+
+        logger.debug(
+            f"残差动量计算: {len(residual_short)} 只股票, "
+            f"beta覆盖率={n_beta_used}/{len(residual_short)}, "
+            f"market_ret_short={market_ret_short:.4f}, "
+            f"market_ret_long={market_ret_long:.4f}"
+        )
+
+        return residual_short, residual_long
+
+    def _compute_industry_crowding(
+        self,
+        select_idx: int,
+        close: pl.DataFrame,
+        top_industries: list[str],
+        industry_stocks: dict[str, list[str]],
+    ) -> dict[str, int]:
+        """计算行业拥挤度得分（华泰金工3指标简化版）
+
+        拥挤度指标（聚宽因子）：
+        - VOL20: 20日成交量
+        - turnover_volatility: 换手率波动率
+        - Skewness20: 20日偏度
+
+        对每个行业，计算该行业所有股票的拥挤度因子均值，
+        然后取近 crowding_window 日的分位，超过 crowding_threshold 则触发。
+        触发数 >= crowding_min_triggers 为高拥挤行业。
+
+        Args:
+            select_idx: 选股截面索引（用 t-1 数据）
+            close: 候选池收盘价宽表（用于获取 select_date）
+            top_industries: 候选行业列表
+            industry_stocks: {industry: [code1, code2, ...]}
+
+        Returns:
+            {industry: crowding_score}  crowding_score=触发的指标数
+        """
+        factor_data = self._load_factor_data()
+        if factor_data is None:
+            return {ind: 0 for ind in top_industries}
+
+        # 获取选股日
+        select_date_raw = close.row(select_idx, named=True).get("date")
+        if hasattr(select_date_raw, "date"):
+            select_date_obj = select_date_raw.date()
+        else:
+            select_date_obj = select_date_raw
+
+        # 检查因子列是否存在
+        available_factors = [
+            f for f in self.crowding_factors if f in factor_data.columns
+        ]
+        if not available_factors:
+            logger.warning(
+                f"拥挤度因子全部不可用: {self.crowding_factors}, "
+                f"factor_data列: {factor_data.columns[:20]}..."
+            )
+            return {ind: 0 for ind in top_industries}
+
+        # 取近 crowding_window 日的因子数据
+        factor_recent = factor_data.filter(
+            pl.col("date").dt.date() <= select_date_obj
+        ).sort("date").group_by("code").map_groups(
+            lambda g: g.tail(self.crowding_window)
+        )
+
+        if len(factor_recent) == 0:
+            return {ind: 0 for ind in top_industries}
+
+        # 对每个行业计算拥挤度得分
+        crowding_scores: dict[str, int] = {}
+        for industry in top_industries:
+            stocks = industry_stocks.get(industry, [])
+            if not stocks:
+                crowding_scores[industry] = 0
+                continue
+
+            # 取该行业股票的因子数据
+            ind_data = factor_recent.filter(pl.col("code").is_in(stocks))
+            if len(ind_data) == 0:
+                crowding_scores[industry] = 0
+                continue
+
+            # 计算每个因子的当前值（截面均值）和历史分位
+            triggers = 0
+            for factor_name in available_factors:
+                if factor_name not in ind_data.columns:
+                    continue
+                # 按日期聚合（行业截面均值）
+                daily_ind = (
+                    ind_data.group_by("date")
+                    .agg(pl.col(factor_name).mean().alias("factor_val"))
+                    .drop_nulls("factor_val")
+                    .sort("date")
+                )
+                if len(daily_ind) < 30:  # 数据不足
+                    continue
+
+                current_val = daily_ind["factor_val"][-1]
+                if current_val is None:
+                    continue
+
+                # 计算近 crowding_window 日的分位
+                history_vals = daily_ind["factor_val"].to_numpy()
+                history_vals = history_vals[~np.isnan(history_vals)]
+                if len(history_vals) < 30:
+                    continue
+
+                # 95%分位阈值
+                threshold = float(np.quantile(history_vals, self.crowding_threshold))
+                if current_val > threshold:
+                    triggers += 1
+
+            crowding_scores[industry] = triggers
+
+        return crowding_scores
 
     def _build_ml_training_data(
         self, select_idx: int, close: pl.DataFrame, stock_codes: list[str]
@@ -735,11 +1004,19 @@ class IndustryRotationSelector(BaseSelector):
         if select_idx >= len(mom_short):
             return None
 
-        # 取昨日截面动量（防前视偏差：t-1 日选股，t 日持有赚 close[t]/close[t-1]-1）
-        short_row = mom_short.row(select_idx, named=True)
-        long_row = mom_long.row(select_idx, named=True)
+        # 残差动量（华泰金工）：剔除市场Beta暴露后的特异性动量
+        # residual_return = stock_return - raw_beta * market_return
+        if self.use_residual_momentum:
+            short_row, long_row = self._compute_residual_momentum(
+                select_idx, close, stock_codes, mom_short, mom_long
+            )
+        else:
+            # 取昨日截面动量（防前视偏差：t-1 日选股，t 日持有赚 close[t]/close[t-1]-1）
+            short_row = mom_short.row(select_idx, named=True)
+            long_row = mom_long.row(select_idx, named=True)
 
         # 计算每只股票的综合动量 + 行业归属
+        # short_row/long_row 既可以是 dict（残差动量）也可以是 named_row（简单动量）
         stock_momentum: dict[str, float] = {}
         stock_industry: dict[str, str] = {}
         for code in stock_codes:
@@ -874,6 +1151,35 @@ class IndustryRotationSelector(BaseSelector):
                         f"保留{len(filtered)}/{self.top_industries}"
                     )
                 top_industries = filtered
+
+        # 拥挤度过滤（NEW: 华泰金工+西南证券思路）
+        # 高拥挤行业（量价极度活跃）容易发生动量崩盘，应剔除
+        if self.use_crowding_filter and top_industries:
+            crowding_scores = self._compute_industry_crowding(
+                select_idx, close, top_industries, industry_stocks
+            )
+            # 剔除高拥挤行业（触发数 >= crowding_min_triggers）
+            filtered = [
+                ind for ind in top_industries
+                if crowding_scores.get(ind, 0) < self.crowding_min_triggers
+            ]
+            # 确保至少保留 crowding_min_industries 个行业
+            if len(filtered) < self.crowding_min_industries:
+                # 按拥挤度得分升序（低拥挤优先）补充
+                sorted_by_crowd = sorted(
+                    top_industries,
+                    key=lambda x: crowding_scores.get(x, 0),
+                )
+                filtered = sorted_by_crowd[: self.crowding_min_industries]
+            removed = set(top_industries) - set(filtered)
+            if removed:
+                logger.info(
+                    f"拥挤度过滤(>={self.crowding_min_triggers}指标触发95%分位): "
+                    f"剔除{len(removed)}个高拥挤行业 "
+                    f"{[r for r in removed]}，"
+                    f"保留{len(filtered)}/{len(top_industries)}"
+                )
+            top_industries = filtered
 
         # 每个选中行业选 Top-M 只股票
         # use_ml=true: 按ML预测收益排序
