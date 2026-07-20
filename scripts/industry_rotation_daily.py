@@ -8,8 +8,10 @@ T日早晨运行：下载T-1数据后，运行本脚本检查是否需要调仓�
 - 如无需调仓，显示当前持仓和下次调仓日
 
 用法:
-    python scripts/industry_rotation_daily.py                  # 检查最新数据日是否调仓
-    python scripts/industry_rotation_daily.py --date 2026-07-20  # 指定日期检查
+    python scripts/industry_rotation_daily.py                       # 默认 v15 检查最新数据日
+    python scripts/industry_rotation_daily.py --version v15         # 指定版本
+    python scripts/industry_rotation_daily.py --date 2026-07-20     # 指定日期检查
+    python scripts/industry_rotation_daily.py --version v9          # 使用旧版本 v9
 """
 from __future__ import annotations
 
@@ -29,11 +31,9 @@ from ohmyquant.strategy import StrategyRegistry, StrategyRunner
 
 logger = logging.getLogger(__name__)
 
-STRATEGY_NAME = "industry_rotation_v9"  # 完整名: industry_rotation_v9 (mf12_lowbeta_riskfilter20_dualmom20_rrg220_30, final)
-VERSION = "v9"
+DEFAULT_VERSION = "v15"  # 当前 final 版本（v9 为旧 final，已 superseded）
 DATA_ROOT = "D:/Work/Project/download_a_share/data"
 TEMPLATE_PATH = Path("templates/ths_pms_template.xlsx")
-OUTPUT_DIR = Path(f"output/ths/{STRATEGY_NAME}")
 OOS_START = "2026-06-01"
 TRANSACTION_COST_RATE = 0.001
 LOT_SIZE = 100
@@ -47,9 +47,9 @@ def get_latest_data_date(source: DuckDBSource) -> str:
     return latest
 
 
-def run_oos_backtest(end_date: str) -> dict:
+def run_oos_backtest(end_date: str, version: str = DEFAULT_VERSION) -> dict:
     """运行OOS回测到指定日期，返回结果和调仓历史"""
-    print(f"运行OOS回测: {OOS_START} → {end_date}")
+    print(f"运行OOS回测: {OOS_START} → {end_date} (version={version})")
 
     config_override = {
         "backtest": {
@@ -57,7 +57,7 @@ def run_oos_backtest(end_date: str) -> dict:
             "end_date": end_date,
         }
     }
-    strategy = StrategyRegistry.create("industry_rotation", VERSION, config_override)
+    strategy = StrategyRegistry.create("industry_rotation", version, config_override)
     runner = StrategyRunner(strategy.config)
     result = runner.run()
 
@@ -158,6 +158,7 @@ def generate_trades(
     open_prices: dict[str, float],
     prev_cash: float,
     is_build: bool,
+    strategy_name: str = f"industry_rotation_{DEFAULT_VERSION}",
 ) -> tuple[list[dict], dict[str, int], float]:
     """生成交易流水"""
     trades: list[dict] = []
@@ -178,7 +179,7 @@ def generate_trades(
                 "交易日期": dt, "证券代码": code, "业务类型": "买入",
                 "数量": shares, "价格": round(price, 4),
                 "成交金额": round(amount, 2), "费用": round(cost, 2),
-                "证券类型": "A股", "说明": f"建仓 {STRATEGY_NAME}",
+                "证券类型": "A股", "说明": f"建仓 {strategy_name}",
             })
         new_shares = {t["证券代码"]: t["数量"] for t in trades}
         new_cash = prev_cash - sum(t["成交金额"] + t["费用"] for t in trades)
@@ -209,7 +210,7 @@ def generate_trades(
                     "交易日期": dt, "证券代码": code, "业务类型": "卖出",
                     "数量": sell_shares, "价格": round(price, 4),
                     "成交金额": round(amount, 2), "费用": round(cost, 2),
-                    "证券类型": "A股", "说明": f"调仓卖出 {STRATEGY_NAME}",
+                    "证券类型": "A股", "说明": f"调仓卖出 {strategy_name}",
                 })
 
         # 买入
@@ -226,7 +227,7 @@ def generate_trades(
                     "交易日期": dt, "证券代码": code, "业务类型": "买入",
                     "数量": buy_shares, "价格": round(price, 4),
                     "成交金额": round(amount, 2), "费用": round(cost, 2),
-                    "证券类型": "A股", "说明": f"调仓买入 {STRATEGY_NAME}",
+                    "证券类型": "A股", "说明": f"调仓买入 {strategy_name}",
                 })
 
         new_shares = {c: target_shares.get(c, 0) for c in set(list(prev_shares.keys()) + list(target_shares.keys()))}
@@ -261,6 +262,7 @@ def replay_history(
     source: DuckDBSource,
     rebalance_log: list[dict],
     check_date: str,
+    strategy_name: str = f"industry_rotation_{DEFAULT_VERSION}",
 ) -> tuple[dict[str, int], float]:
     """回放历史调仓，重建到 check_date 前一日的持仓状态
 
@@ -282,7 +284,8 @@ def replay_history(
 
         is_build = (len(prev_shares) == 0)
         _, prev_shares, prev_cash = generate_trades(
-            date_str, prev_shares, holdings, open_prices, prev_cash, is_build
+            date_str, prev_shares, holdings, open_prices, prev_cash, is_build,
+            strategy_name=strategy_name,
         )
 
     return prev_shares, prev_cash
@@ -290,8 +293,15 @@ def replay_history(
 
 def main():
     parser = argparse.ArgumentParser(description="行业轮动策略每日调仓检查")
-    parser.add_argument("--date", default=None, help="指定日期(YYYY-MM-DD)，默认用最新数据日")
+    parser.add_argument("--version", default=DEFAULT_VERSION,
+                        help=f"策略版本(默认 {DEFAULT_VERSION})")
+    parser.add_argument("--date", default=None,
+                        help="指定日期(YYYY-MM-DD)，默认用最新数据日")
     args = parser.parse_args()
+
+    version = args.version
+    strategy_name = f"industry_rotation_{version}"
+    output_dir = Path(f"output/ths/{strategy_name}")
 
     source = DuckDBSource({"data_root": DATA_ROOT})
 
@@ -303,11 +313,12 @@ def main():
 
     check_dt = datetime.strptime(check_date, "%Y-%m-%d")
     weekday_names = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+    print(f"策略版本: {strategy_name}")
     print(f"检查日期: {check_date} ({weekday_names[check_dt.weekday()]})")
     print("=" * 60)
 
     # 2. 运行OOS回测到检查日期
-    result = run_oos_backtest(check_date)
+    result = run_oos_backtest(check_date, version=version)
     rebalance_log = result["rebalance_log"]
 
     if not rebalance_log:
@@ -357,7 +368,9 @@ def main():
     print(f"\n>>> 今日({check_date})为调仓日，生成同花顺交易流水...")
 
     # 回放历史调仓重建持仓状态（无需state.json，每次完整重建）
-    prev_shares, prev_cash = replay_history(source, rebalance_log, check_date)
+    prev_shares, prev_cash = replay_history(
+        source, rebalance_log, check_date, strategy_name=strategy_name
+    )
     is_build = (len(prev_shares) == 0)
 
     if is_build:
@@ -367,13 +380,17 @@ def main():
 
     # 获取所有股票的开盘价（当前持仓 + 目标持仓），避免漏卖漏买
     all_codes = list(set(list(prev_shares.keys()) + list(last_holdings.keys())))
+    if not all_codes:
+        print(f"  目标持仓和当前持仓都为空（继续空仓），无需生成交易文件")
+        return
     open_prices = get_open_prices(source, all_codes, check_date)
     if not open_prices:
         print(f"无法获取{check_date}开盘价，无法生成交易文件")
         return
 
     trades, new_shares, new_cash = generate_trades(
-        check_date, prev_shares, last_holdings, open_prices, prev_cash, is_build
+        check_date, prev_shares, last_holdings, open_prices, prev_cash, is_build,
+        strategy_name=strategy_name,
     )
 
     if not trades:
@@ -388,7 +405,7 @@ def main():
         filename = f"{check_date.replace('-', '')}_rebalance.xlsx"
         label = "调仓"
 
-    output_path = OUTPUT_DIR / filename
+    output_path = output_dir / filename
     write_xlsx(trades, output_path)
 
     # 打印摘要

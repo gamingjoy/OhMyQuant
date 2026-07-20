@@ -1,4 +1,8 @@
-"""行业轮动策略 v15（多周期RRG + 行业估值过滤）
+"""行业轮动策略 v15（多周期RRG + 行业估值过滤）—— [FINAL]
+
+状态: final（当前最优策略）
+IS Sharpe 0.4030 / OOS Sharpe 1.7018 / OOS 收益 +3.32%（vs 沪深300 -3.01%）
+IS-OOS 一致性最优，超越 v9 (IS 0.4150 / OOS 0.0401)
 
 v15 = v14 + 行业估值过滤（华商基金估值安全边际思路）
 
@@ -30,7 +34,10 @@ from ohmyquant.strategy.base import BaseStrategy
 
 @register_strategy("industry_rotation", "v15")
 class IndustryRotationStrategyV15(BaseStrategy):
-    """行业轮动策略 industry_rotation_v15 (multiperiod_rrg_pe_csi300, iter)"""
+    """行业轮动策略 industry_rotation_v15 (multiperiod_rrg_pe_csi300, final)
+
+    状态: final（当前最优策略，2026-07-20 锁定）
+    """
 
     @classmethod
     def from_version(

@@ -1,9 +1,15 @@
 # 行业轮动策略 (industry_rotation) 完整报告
 
-> **当前最终版本**: industry_rotation_v9 (mf12_lowbeta_riskfilter20_dualmom20_rrg220_30, final)
+> **版本**: industry_rotation_v9 (mf12_lowbeta_riskfilter20_dualmom20_rrg220_30, **superseded**)
 > **锁定日期**: 2026-07-19
 > **OOS 区间**: 2026-06-01 ~ 2026-07-16 (33 个交易日)
+> **状态**: 旧 final 版本，已被 v15 (multiperiod_rrg_pe_csi300) 取代
 > **前序版本**: v8 (superseded), v7 (superseded), v6 (superseded), v5 (superseded), v4 (archived)
+> **后续版本**: v14 (superseded), v15 (final)
+
+> **注**: 本报告为 v9 历史文档，仅作参考。最新 final 版本报告请见 [industry_rotation_v15_strategy_report.md](industry_rotation_v15_strategy_report.md)。
+> v9 在 IS-OOS 一致性上不如 v15：v9 IS Sharpe 0.4150/OOS Sharpe 0.0401（IS 过拟合），
+> v15 IS Sharpe 0.4030/OOS Sharpe 1.7018（IS-OOS 一致）。
 
 ---
 

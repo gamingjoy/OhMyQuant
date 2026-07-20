@@ -1,4 +1,9 @@
-"""行业轮动策略 v9（RRG 相对强度动量）
+"""行业轮动策略 v9（RRG 相对强度动量）—— [SUPERSEDED by v15]
+
+状态: superseded（已被 v15 取代，仅作历史参考）
+原因: v9 单周期 30日 RS-Mom 存在 data snooping 风险，IS-OOS 一致性差
+      v9 IS Sharpe 0.4150 / OOS Sharpe 0.0401（IS 过拟合）
+      v15 IS Sharpe 0.4030 / OOS Sharpe 1.7018（IS-OOS 一致，多周期投票+PE过滤）
 
 v8 问题：OOS 收益仍为负（-2.72%），超额仅 +0.29%
          6/22 选了电子/通信/建筑材料，绝对动量（60/120日）仍正但7月下跌
@@ -33,7 +38,10 @@ from ohmyquant.strategy.base import BaseStrategy
 
 @register_strategy("industry_rotation", "v9")
 class IndustryRotationStrategyV9(BaseStrategy):
-    """行业轮动策略 industry_rotation_v9 (mf12_lowbeta_riskfilter20_dualmom20_rrg220_30, iter)"""
+    """行业轮动策略 industry_rotation_v9 (mf12_lowbeta_riskfilter20_dualmom20_rrg220_30, superseded)
+
+    状态: superseded by v15 (multiperiod_rrg_pe_csi300)
+    """
 
     @classmethod
     def from_version(
