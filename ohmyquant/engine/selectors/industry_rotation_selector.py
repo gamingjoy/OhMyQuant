@@ -281,7 +281,9 @@ class IndustryRotationSelector(BaseSelector):
         """惰性加载聚宽因子宽表数据"""
         if self._factor_data is not None:
             return self._factor_data
-        if not self.use_factors or not self.factor_names:
+        # use_factors 或 use_ml 任一启用时都需要加载因子数据
+        # （ML 用因子作为特征，不应依赖 use_factors 标志）
+        if not self.factor_names or (not self.use_factors and not self.use_ml):
             return None
         try:
             from ...data.sources.duckdb_source import DuckDBSource
