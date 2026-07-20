@@ -112,6 +112,18 @@ class IndustryRotationSelector(BaseSelector):
             "rrg_momentum_threshold", 100.0
         )  # RS-Momentum >= 100 表示相对强度在加速
         self.rrg_min_industries: int = ir_cfg.get("rrg_min_industries", 3)
+        # 多周期 RRG 投票（NEW in v14, 降低单周期过拟合）
+        # 研报参考：v9稳健性分析建议多周期RRG组合(10/30/60日投票)
+        # 当 rs_momentum_windows 设置多个值时，启用多周期投票模式：
+        #   - 计算每个窗口的 RS-Mom
+        #   - 行业入选需 >= vote_threshold 个窗口的 RS-Mom >= 阈值
+        # 当 rs_momentum_windows 为空或单值时，回退到单周期模式（向后兼容）
+        self.rs_momentum_windows: list[int] = ir_cfg.get(
+            "rs_momentum_windows", []
+        )  # 多周期RS-Mom窗口列表，如 [10, 30, 60]
+        self.rs_momentum_vote_threshold: int = ir_cfg.get(
+            "rs_momentum_vote_threshold", 2
+        )  # 多周期投票阈值，>=threshold个窗口领先才算领先
         # 残差动量（Residual Momentum, 华泰金工）
         # 核心：剔除市场Beta暴露后的特异性动量
         # residual_return_N = stock_return_N - raw_beta * market_return_N
@@ -149,6 +161,34 @@ class IndustryRotationSelector(BaseSelector):
             "crowding_factors",
             ["VOL20", "turnover_volatility", "Skewness20"],
         )  # 拥挤度指标因子名
+        # 拥挤度动态分域（NEW v16: 西南证券思路）
+        # 核心：高拥挤行业用反转(均值回归)，非拥挤行业用动量(趋势跟踪)
+        # 研报参考：西南证券《拥挤度动态分域》
+        #   - 非拥挤行业：动量效应显著 → 用动量策略
+        #   - 高拥挤行业：反转效应显著 → 用反转策略
+        # 实现：对高拥挤行业的股票，反转其评分符号（-score），选"输家"期望反弹
+        # 与 use_crowding_filter 互斥：filter剔除高拥挤，reversal保留并用反转
+        self.use_crowding_reversal: bool = ir_cfg.get(
+            "use_crowding_reversal", False
+        )
+        # 行业估值过滤（PE Filter, 华商基金估值安全边际思路）
+        # 核心：剔除历史估值分位极高（最贵）的行业，规避估值泡沫
+        # 实现：用 earnings_to_price_ratio(=1/PE) 因子，取近 pe_lookback 日分位
+        #       E/P 分位 < pe_expensive_percentile（即估值最贵的N%）的行业被剔除
+        # 研报参考：华商基金 - 行业轮动重视估值安全边际
+        self.use_pe_filter: bool = ir_cfg.get("use_pe_filter", False)
+        self.pe_factor: str = ir_cfg.get(
+            "pe_factor", "earnings_to_price_ratio"
+        )  # 用作估值代理的因子（高E/P=便宜）
+        self.pe_lookback: int = ir_cfg.get(
+            "pe_lookback", 250
+        )  # 估值分位回看窗口（约1年）
+        self.pe_expensive_percentile: float = ir_cfg.get(
+            "pe_expensive_percentile", 0.10
+        )  # E/P 分位 < 10% 视为过贵（即PE分位 > 90%）
+        self.pe_min_industries: int = ir_cfg.get(
+            "pe_min_industries", 3
+        )  # 至少保留N个行业
         # 多因子选股
         self.use_factors: bool = ir_cfg.get("use_factors", False)
         self.factor_names: list[str] = ir_cfg.get("factor_names", [])
@@ -290,23 +330,36 @@ class IndustryRotationSelector(BaseSelector):
             )
 
             # 6. 计算 RS-Momentum = RS-Ratio / RS-Ratio.shift(M) × 100
-            industry_daily = industry_daily.with_columns(
-                (
-                    pl.col("rs_ratio")
-                    / pl.col("rs_ratio").shift(self.rs_momentum_window)
-                    * 100.0
-                ).alias("rs_momentum")
+            # 多周期模式：计算每个窗口的 RS-Mom 列（rs_momentum_10, rs_momentum_30, ...）
+            # 单周期模式：保持向后兼容，仅计算 rs_momentum 一列
+            windows_to_compute = (
+                self.rs_momentum_windows
+                if len(self.rs_momentum_windows) > 1
+                else [self.rs_momentum_window]
             )
+            rrg_cols = ["date", "industry", "rs_ratio"]
+            for w in windows_to_compute:
+                col_name = (
+                    f"rs_momentum_{w}"
+                    if len(windows_to_compute) > 1
+                    else "rs_momentum"
+                )
+                industry_daily = industry_daily.with_columns(
+                    (
+                        pl.col("rs_ratio")
+                        / pl.col("rs_ratio").shift(w)
+                        * 100.0
+                    ).alias(col_name)
+                )
+                rrg_cols.append(col_name)
 
-            self._rrg_table = industry_daily.select(
-                ["date", "industry", "rs_ratio", "rs_momentum"]
-            )
+            self._rrg_table = industry_daily.select(rrg_cols)
 
             logger.info(
                 f"RRG 计算完成: {len(self._rrg_table)} 行, "
                 f"{self._rrg_table['industry'].n_unique()} 行业, "
                 f"rs_ratio_window={self.rs_ratio_window}, "
-                f"rs_momentum_window={self.rs_momentum_window}"
+                f"rs_momentum_windows={windows_to_compute}"
             )
         except Exception as e:
             logger.warning(f"RRG 计算失败: {e}")
@@ -321,25 +374,35 @@ class IndustryRotationSelector(BaseSelector):
         # use_factors 或 use_ml 任一启用时都需要加载因子数据
         # （ML 用因子作为特征，不应依赖 use_factors 标志）
         # 拥挤度过滤也需要加载 crowding_factors
+        # 估值过滤需要加载 pe_factor
+        # 拥挤度反转需要加载 crowding_factors
         need_load = (
             (self.use_factors or self.use_ml) and self.factor_names
-        ) or (self.use_crowding_filter and self.crowding_factors)
+        ) or (self.use_crowding_filter and self.crowding_factors) or (
+            self.use_pe_filter and self.pe_factor
+        ) or (self.use_crowding_reversal and self.crowding_factors)
         if not need_load:
             return None
         try:
             from ...data.sources.duckdb_source import DuckDBSource
 
             source = DuckDBSource({"data_root": self.data_root})
-            # 加载 factor_names + crowding_factors 的并集（去重）
+            # 加载 factor_names + crowding_factors + pe_factor 的并集（去重）
+            extra_factors = list(self.crowding_factors) if (
+                self.use_crowding_filter or self.use_crowding_reversal
+            ) else []
+            if self.use_pe_filter and self.pe_factor:
+                extra_factors.append(self.pe_factor)
             all_factors = list(
-                dict.fromkeys(self.factor_names + self.crowding_factors)
+                dict.fromkeys(self.factor_names + extra_factors)
             )
             df = source.load_factor_wide(factor_names=all_factors)
             if df is not None and len(df) > 0:
                 self._factor_data = df.sort("date")
                 logger.info(
                     f"因子数据加载: {len(df)} 行, {len(all_factors)} 个因子 "
-                    f"(选股{len(self.factor_names)}+拥挤度{len(self.crowding_factors)})"
+                    f"(选股{len(self.factor_names)}+拥挤度{len(self.crowding_factors) if (self.use_crowding_filter or self.use_crowding_reversal) else 0}"
+                    f"+估值{1 if self.use_pe_filter else 0})"
                 )
         except Exception as e:
             logger.warning(f"因子数据加载失败: {e}")
@@ -729,6 +792,105 @@ class IndustryRotationSelector(BaseSelector):
 
         return crowding_scores
 
+    def _compute_industry_pe_percentile(
+        self,
+        select_idx: int,
+        close: pl.DataFrame,
+        top_industries: list[str],
+        industry_stocks: dict[str, list[str]],
+    ) -> dict[str, float]:
+        """计算行业估值分位（华商基金估值安全边际思路）
+
+        使用 earnings_to_price_ratio(=1/PE) 作为估值代理：
+        - 高 E/P = 便宜（低估）
+        - 低 E/P = 昂贵（高估）
+
+        对每个行业，计算该行业所有股票 E/P 的截面均值，
+        然后取近 pe_lookback 日的分位值：
+        - 分位 < pe_expensive_percentile 表示当前 E/P 处于历史低位（即 PE 处于高位，估值贵）
+
+        Args:
+            select_idx: 选股截面索引
+            close: 候选池收盘价宽表（用于获取 select_date）
+            top_industries: 候选行业列表
+            industry_stocks: {industry: [code1, code2, ...]}
+
+        Returns:
+            {industry: ep_percentile}  ep_percentile in [0, 1]
+            高分位=便宜，低分位=贵
+        """
+        factor_data = self._load_factor_data()
+        if factor_data is None:
+            return {ind: 0.5 for ind in top_industries}
+
+        # 获取选股日
+        select_date_raw = close.row(select_idx, named=True).get("date")
+        if hasattr(select_date_raw, "date"):
+            select_date_obj = select_date_raw.date()
+        else:
+            select_date_obj = select_date_raw
+
+        # 检查因子列
+        if self.pe_factor not in factor_data.columns:
+            logger.warning(
+                f"估值因子 {self.pe_factor} 不在 factor_data 中, "
+                f"可用列: {factor_data.columns[:20]}..."
+            )
+            return {ind: 0.5 for ind in top_industries}
+
+        # 取近 pe_lookback 日的因子数据
+        factor_recent = factor_data.filter(
+            pl.col("date").dt.date() <= select_date_obj
+        ).sort("date").group_by("code").map_groups(
+            lambda g: g.tail(self.pe_lookback)
+        )
+
+        if len(factor_recent) == 0:
+            return {ind: 0.5 for ind in top_industries}
+
+        # 对每个行业计算 E/P 分位
+        pe_percentiles: dict[str, float] = {}
+        for industry in top_industries:
+            stocks = industry_stocks.get(industry, [])
+            if not stocks:
+                pe_percentiles[industry] = 0.5
+                continue
+
+            # 取该行业股票的因子数据
+            ind_data = factor_recent.filter(pl.col("code").is_in(stocks))
+            if len(ind_data) == 0:
+                pe_percentiles[industry] = 0.5
+                continue
+
+            # 按日期聚合（行业截面均值，排除极端值）
+            daily_ind = (
+                ind_data.group_by("date")
+                .agg(pl.col(self.pe_factor).mean().alias("factor_val"))
+                .drop_nulls("factor_val")
+                .sort("date")
+            )
+            if len(daily_ind) < 30:
+                pe_percentiles[industry] = 0.5
+                continue
+
+            current_val = daily_ind["factor_val"][-1]
+            if current_val is None:
+                pe_percentiles[industry] = 0.5
+                continue
+
+            # 计算当前 E/P 在历史中的分位
+            history_vals = daily_ind["factor_val"].to_numpy()
+            history_vals = history_vals[~np.isnan(history_vals)]
+            if len(history_vals) < 30:
+                pe_percentiles[industry] = 0.5
+                continue
+
+            # 分位 = 当前值在历史中的位置（0=最低/最贵，1=最高/最便宜）
+            percentile = float(np.mean(history_vals <= current_val))
+            pe_percentiles[industry] = percentile
+
+        return pe_percentiles
+
     def _build_ml_training_data(
         self, select_idx: int, close: pl.DataFrame, stock_codes: list[str]
     ) -> tuple[np.ndarray | None, np.ndarray | None]:
@@ -1074,11 +1236,26 @@ class IndustryRotationSelector(BaseSelector):
                     select_date_obj = select_date_raw
 
                 # 取该日所有行业的 RRG 数据
-                rrg_at_date = rrg_table.filter(
-                    (pl.col("date").cast(pl.Date) == select_date_obj)
-                    & pl.col("rs_ratio").is_not_null()
-                    & pl.col("rs_momentum").is_not_null()
-                )
+                # 多周期模式下过滤任一 RS-Mom 列非null，单周期模式保持原逻辑
+                rrg_mom_cols = [
+                    c for c in rrg_table.columns
+                    if c.startswith("rs_momentum")
+                ]
+                if len(rrg_mom_cols) > 1:
+                    # 多周期：任一列非null即可
+                    null_filter = pl.col("rs_ratio").is_not_null()
+                    for c in rrg_mom_cols:
+                        null_filter = null_filter & pl.col(c).is_not_null()
+                    rrg_at_date = rrg_table.filter(
+                        (pl.col("date").cast(pl.Date) == select_date_obj)
+                        & null_filter
+                    )
+                else:
+                    rrg_at_date = rrg_table.filter(
+                        (pl.col("date").cast(pl.Date) == select_date_obj)
+                        & pl.col("rs_ratio").is_not_null()
+                        & pl.col("rs_momentum").is_not_null()
+                    )
 
                 if len(rrg_at_date) > 0:
                     # 步骤1: 按 RS-Ratio 降序取候选（扩大候选池到 top_industries × 2）
@@ -1089,10 +1266,31 @@ class IndustryRotationSelector(BaseSelector):
                     )
                     rrg_candidates = rrg_sorted.head(candidate_n)
 
-                    # 步骤2: 从候选中筛选 RS-Momentum >= 阈值（领先象限）
-                    leading = rrg_candidates.filter(
-                        pl.col("rs_momentum") >= self.rrg_momentum_threshold
-                    )
+                    # 步骤2: 从候选中筛选领先行业
+                    # 多周期投票模式：要求 >= vote_threshold 个窗口的 RS-Mom >= 阈值
+                    # 单周期模式：保持向后兼容，要求 rs_momentum >= 阈值
+                    if len(rrg_mom_cols) > 1:
+                        # 多周期投票：对每个行业计算领先的窗口数
+                        vote_exprs = [
+                            (
+                                pl.col(c) >= self.rrg_momentum_threshold
+                            ).cast(pl.Int32)
+                            for c in rrg_mom_cols
+                        ]
+                        rrg_candidates = rrg_candidates.with_columns(
+                            sum(vote_exprs).alias("vote_count")
+                        )
+                        leading = rrg_candidates.filter(
+                            pl.col("vote_count") >= self.rs_momentum_vote_threshold
+                        )
+                        leading = leading.sort(
+                            ["vote_count", "rs_ratio"], descending=[True, True]
+                        )
+                    else:
+                        # 单周期模式
+                        leading = rrg_candidates.filter(
+                            pl.col("rs_momentum") >= self.rrg_momentum_threshold
+                        )
 
                     # 步骤3: 至少保留 rrg_min_industries 个，不足时按 RS-Ratio 排名补充
                     if len(leading) >= self.rrg_min_industries:
@@ -1181,6 +1379,40 @@ class IndustryRotationSelector(BaseSelector):
                 )
             top_industries = filtered
 
+        # 行业估值过滤（NEW v15: 华商基金估值安全边际思路）
+        # 剔除 E/P 历史分位 < pe_expensive_percentile 的行业（即 PE 处于历史高位的过贵行业）
+        if self.use_pe_filter and top_industries:
+            pe_percentiles = self._compute_industry_pe_percentile(
+                select_idx, close, top_industries, industry_stocks
+            )
+            # 剔除估值过贵的行业（E/P 分位过低 = PE 过高 = 贵）
+            filtered = [
+                ind for ind in top_industries
+                if pe_percentiles.get(ind, 0.5) >= self.pe_expensive_percentile
+            ]
+            # 确保至少保留 pe_min_industries 个行业
+            if len(filtered) < self.pe_min_industries:
+                # 按 E/P 分位降序（便宜优先）补充
+                sorted_by_pe = sorted(
+                    top_industries,
+                    key=lambda x: pe_percentiles.get(x, 0.5),
+                    reverse=True,
+                )
+                filtered = sorted_by_pe[: self.pe_min_industries]
+            removed = set(top_industries) - set(filtered)
+            if removed:
+                expensive_detail = {
+                    ind: f"{pe_percentiles.get(ind, 0.5):.2f}"
+                    for ind in removed
+                }
+                logger.info(
+                    f"估值过滤(E/P分位<{self.pe_expensive_percentile:.2f}视为过贵): "
+                    f"剔除{len(removed)}个过贵行业 {list(removed)} "
+                    f"(E/P分位: {expensive_detail})，"
+                    f"保留{len(filtered)}/{len(top_industries)}"
+                )
+            top_industries = filtered
+
         # 每个选中行业选 Top-M 只股票
         # use_ml=true: 按ML预测收益排序
         # use_factors=true: 按多因子复合评分排序
@@ -1204,6 +1436,32 @@ class IndustryRotationSelector(BaseSelector):
                 stock_scores = factor_scores
                 logger.debug(
                     f"使用多因子评分: {len(factor_scores)} 只有评分"
+                )
+
+        # 拥挤度动态分域反转（NEW v16: 西南证券思路）
+        # 对高拥挤行业的股票，反转评分符号（-score），选"输家"期望反弹
+        # 非拥挤行业保持动量（趋势跟踪），高拥挤行业切换到反转（均值回归）
+        if self.use_crowding_reversal and top_industries:
+            crowding_scores_rev = self._compute_industry_crowding(
+                select_idx, close, top_industries, industry_stocks
+            )
+            high_crowd_industries = {
+                ind for ind, score in crowding_scores_rev.items()
+                if score >= self.crowding_min_triggers
+            }
+            if high_crowd_industries:
+                # 复制评分并反转高拥挤行业的股票评分
+                stock_scores = dict(stock_scores)
+                reversed_count = 0
+                for code in list(stock_scores.keys()):
+                    ind = industry_map.get(code, "")
+                    if ind in high_crowd_industries:
+                        stock_scores[code] = -stock_scores[code]
+                        reversed_count += 1
+                logger.info(
+                    f"拥挤度动态分域反转: 高拥挤行业 "
+                    f"{list(high_crowd_industries)}（触发数>="
+                    f"{self.crowding_min_triggers}），反转{reversed_count}只股票评分"
                 )
 
         selected: list[str] = []
