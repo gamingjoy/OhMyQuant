@@ -1,11 +1,10 @@
-# 行业轮动策略 v41 配置（RRG加权投票权重优化：中期主导）—— [SUPERSEDED by v43]
-# v41 = v40 + rs_momentum_vote_weights: [0.5, 0.3, 0.2] → [0.3, 0.4, 0.3]
-# IS Sharpe 0.4803 / OOS Sharpe 2.6787 / OOS +6.66% (IS显著超越v40，OOS持平)
-# 被 v43 (PE调节RRG投票) 取代：v43 IS Sharpe 0.5716 (+19%)，OOS持平
+# 行业轮动策略 v44 配置（基本面因子增强：加入增长因子）—— [ITER]
+# v44 = v43 + factor_names 加入 3 个增长因子
+# baseline: v43 (IS Sharpe 0.5716 / OOS Sharpe 2.6787 / OOS +6.66%)
 strategy_type: industry_rotation
-strategy_version: v41
-strategy_name: "行业轮动策略 industry_rotation_v41 (weighted_rrg_vote_mid_term, superseded)"
-description: "v40+RRG加权投票权重优化[0.3,0.4,0.3]中期主导 [superseded by v43]"
+strategy_version: v44
+strategy_name: "行业轮动策略 industry_rotation_v44 (growth_factors, iter)"
+description: "v43+3增长因子(营收/净利润/归母净利润) [iter]"
 
 backtest:
   start_date: "2022-01-01"
@@ -44,7 +43,6 @@ selection:
     rs_momentum_window: 30
     rs_momentum_windows: [10, 30, 60]
     rs_momentum_vote_threshold: 2
-    # NEW in v41: 权重优化（中期主导，30日动量甜蜜点）
     rs_momentum_vote_weights: [0.3, 0.4, 0.3]
     rrg_momentum_threshold: 100.0
     rrg_min_industries: 3
@@ -53,7 +51,10 @@ selection:
     pe_lookback: 250
     pe_expensive_percentile: 0.10
     pe_min_industries: 3
+    use_pe_adjusted_rrg_vote: true
+    pe_vote_adjust_alpha: 0.2
     use_factors: true
+    # NEW in v44: 12 → 15 因子（新增3增长因子）
     factor_names:
       - Price1M
       - Price3M
@@ -67,6 +68,10 @@ selection:
       - book_to_price_ratio
       - raw_beta
       - residual_volatility
+      # NEW in v44: 增长因子
+      - operating_revenue_growth_rate
+      - net_profit_growth_rate
+      - np_parent_company_owners_growth_rate
     factor_weights:
       Price1M: 1.0
       Price3M: 1.0
@@ -80,6 +85,10 @@ selection:
       book_to_price_ratio: 1.0
       raw_beta: -2.0
       residual_volatility: -1.5
+      # NEW in v44: 增长因子等权
+      operating_revenue_growth_rate: 1.0
+      net_profit_growth_rate: 1.0
+      np_parent_company_owners_growth_rate: 1.0
 
 portfolio:
   max_stock_weight: 0.10

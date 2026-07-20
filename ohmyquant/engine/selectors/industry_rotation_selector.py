@@ -213,6 +213,20 @@ class IndustryRotationSelector(BaseSelector):
         self.pe_min_industries: int = ir_cfg.get(
             "pe_min_industries", 3
         )  # 至少保留N个行业
+        # PE调节RRG投票（NEW v43: PE分位作为RRG投票权重调节因子）
+        # 核心：在RRG加权投票得分上叠加PE调节项，便宜行业加分、昂贵行业减分
+        # 实现：adjusted_vote = weighted_vote + pe_vote_adjust_alpha * (ep_percentile - 0.5)
+        #   - ep_percentile=1（最便宜）：vote + 0.5*alpha（加分，更易入选）
+        #   - ep_percentile=0.5（中位）：vote + 0（不变）
+        #   - ep_percentile=0（最贵）：vote - 0.5*alpha（减分，更难入选）
+        # 与 use_pe_filter 互补：pe_filter 是硬性剔除，pe_adjusted_rrg_vote 是软性调节
+        # 研报参考：华商基金估值安全边际 + 西南证券动态分域思路
+        self.use_pe_adjusted_rrg_vote: bool = ir_cfg.get(
+            "use_pe_adjusted_rrg_vote", False
+        )
+        self.pe_vote_adjust_alpha: float = ir_cfg.get(
+            "pe_vote_adjust_alpha", 0.2
+        )  # PE调节强度，0.2表示最大±0.1的调节
         # 行业RS-Ratio加权（NEW in v19: 结构性改进）
         # 核心：用 RS-Ratio 作为行业权重（替代等权），让长期跑赢大盘的行业权重大
         # 研究假设：RS-Ratio>100 表示行业长期跑赢大盘，应给予更高权重
@@ -410,12 +424,15 @@ class IndustryRotationSelector(BaseSelector):
         # 估值过滤需要加载 pe_factor
         # 拥挤度反转需要加载 crowding_factors
         # 拥挤度反转因子需要加载 crowding_reversal_factor
+        # PE调节RRG投票需要加载 pe_factor
         need_load = (
             (self.use_factors or self.use_ml) and self.factor_names
         ) or (self.use_crowding_filter and self.crowding_factors) or (
             self.use_pe_filter and self.pe_factor
         ) or (self.use_crowding_reversal and self.crowding_factors) or (
             self.use_crowding_reversal_factor and self.crowding_reversal_factor
+        ) or (
+            self.use_pe_adjusted_rrg_vote and self.pe_factor
         )
         if not need_load:
             return None
@@ -428,6 +445,12 @@ class IndustryRotationSelector(BaseSelector):
                 self.use_crowding_filter or self.use_crowding_reversal
             ) else []
             if self.use_pe_filter and self.pe_factor:
+                extra_factors.append(self.pe_factor)
+            if (
+                self.use_pe_adjusted_rrg_vote
+                and self.pe_factor
+                and self.pe_factor not in extra_factors
+            ):
                 extra_factors.append(self.pe_factor)
             if (
                 self.use_crowding_reversal_factor
@@ -444,7 +467,7 @@ class IndustryRotationSelector(BaseSelector):
                 logger.info(
                     f"因子数据加载: {len(df)} 行, {len(all_factors)} 个因子 "
                     f"(选股{len(self.factor_names)}+拥挤度{len(self.crowding_factors) if (self.use_crowding_filter or self.use_crowding_reversal) else 0}"
-                    f"+估值{1 if self.use_pe_filter else 0}"
+                    f"+估值{1 if self.use_pe_filter or self.use_pe_adjusted_rrg_vote else 0}"
                     f"+反转{1 if self.use_crowding_reversal_factor else 0})"
                 )
         except Exception as e:
@@ -1406,6 +1429,34 @@ class IndustryRotationSelector(BaseSelector):
                             rrg_candidates = rrg_candidates.with_columns(
                                 sum(vote_exprs).alias("weighted_vote")
                             )
+
+                            # v43 PE调节RRG投票：在weighted_vote上叠加PE调节项
+                            # adjusted_vote = weighted_vote + alpha * (ep_percentile - 0.5)
+                            # 便宜行业（ep_percentile高）加分，昂贵行业（ep_percentile低）减分
+                            if self.use_pe_adjusted_rrg_vote:
+                                pe_percentiles_v43 = self._compute_industry_pe_percentile(
+                                    select_idx, close,
+                                    rrg_candidates["industry"].to_list(),
+                                    industry_stocks,
+                                )
+                                # 给每个行业计算PE调节项并叠加到weighted_vote
+                                pe_adjustments = [
+                                    float(
+                                        self.pe_vote_adjust_alpha
+                                        * (pe_percentiles_v43.get(ind, 0.5) - 0.5)
+                                    )
+                                    for ind in rrg_candidates["industry"].to_list()
+                                ]
+                                rrg_candidates = rrg_candidates.with_columns(
+                                    pl.Series("pe_adjustment", pe_adjustments, dtype=pl.Float64)
+                                ).with_columns(
+                                    (pl.col("weighted_vote") + pl.col("pe_adjustment")).alias("weighted_vote")
+                                )
+                                logger.debug(
+                                    f"v43 PE调节RRG投票: alpha={self.pe_vote_adjust_alpha}, "
+                                    f"调节范围=[{-0.5*self.pe_vote_adjust_alpha:.3f}, {0.5*self.pe_vote_adjust_alpha:.3f}]"
+                                )
+
                             leading = rrg_candidates.filter(
                                 pl.col("weighted_vote") >= vote_weight_threshold
                             )

@@ -31,7 +31,7 @@ from ohmyquant.strategy import StrategyRegistry, StrategyRunner
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_VERSION = "v41"  # 当前 final 版本（v40 为旧 final，已 superseded）
+DEFAULT_VERSION = "v43"  # 当前 final 版本（v41 为旧 final，已 superseded）
 DATA_ROOT = "D:/Work/Project/download_a_share/data"
 TEMPLATE_PATH = Path("templates/ths_pms_template.xlsx")
 OOS_START = "2026-06-01"
