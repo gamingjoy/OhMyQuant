@@ -722,7 +722,7 @@ class IndustryRotationSelector(BaseSelector):
             market_scale = self._compute_market_scale(select_idx, close)
             if market_scale <= 0.0:
                 logger.debug(f"大盘跌破长期均线，空仓 @ idx={current_idx}")
-                return None  # 空仓
+                return {}  # 空仓（明确返回空dict，区别于None=数据不足跳过）
 
         # 计算短期/长期动量（基于 close）
         close_cols = [c for c in close.columns if c != "date"]

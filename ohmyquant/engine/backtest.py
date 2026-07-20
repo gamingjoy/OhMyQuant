@@ -457,7 +457,11 @@ class BacktestEngine(BaseEngine):
                         fwd_returns=self._pool_fwd_returns.get(pool_name),
                     )
 
-                    if weights:
+                    if weights is not None:
+                        # selector 返回非None：写入持仓
+                        # - dict 非空：正常选股结果
+                        # - dict 为空：空仓信号（如 market_scale=0）
+                        # - None：数据不足，跳过（沿用上一期）
                         # selector 已在内部应用 weight cap + market_scale，
                         # 此处不再调用 portfolio_optimizer.apply_weight_cap
                         # （该方法的最终归一化会抹掉 market_scale 的降仓效果）
