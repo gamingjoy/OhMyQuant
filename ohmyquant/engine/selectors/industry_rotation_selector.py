@@ -189,6 +189,15 @@ class IndustryRotationSelector(BaseSelector):
         self.pe_min_industries: int = ir_cfg.get(
             "pe_min_industries", 3
         )  # 至少保留N个行业
+        # 行业RS-Ratio加权（NEW in v19: 结构性改进）
+        # 核心：用 RS-Ratio 作为行业权重（替代等权），让长期跑赢大盘的行业权重大
+        # 研究假设：RS-Ratio>100 表示行业长期跑赢大盘，应给予更高权重
+        # 实现：行业权重 ∝ max(rs_ratio, 0)，归一化后应用 max_industry_weight 上限
+        #       行业内股票等权分配行业权重
+        # 与等权相比：能聚焦强势行业，但避免单一行业过度集中
+        self.use_industry_weight_by_rs: bool = ir_cfg.get(
+            "use_industry_weight_by_rs", False
+        )
         # 多因子选股
         self.use_factors: bool = ir_cfg.get("use_factors", False)
         self.factor_names: list[str] = ir_cfg.get("factor_names", [])
@@ -1225,6 +1234,8 @@ class IndustryRotationSelector(BaseSelector):
         # 研报参考：2026 量化轮动策略报告（RRG 框架下行业轮动）
         # 核心：RS-Momentum 是先行指标，能在行业绝对动量仍正但相对强度已转弱时提前剔除
         # 解决 v8 OOS 6/22 选了电子/通信/建筑材料（绝对动量仍正但7月下跌）的问题
+        rrg_table = None
+        select_date_obj = None
         if self.use_rrg:
             rrg_table = self._compute_rrg_table(close)
             if rrg_table is not None:
@@ -1479,6 +1490,53 @@ class IndustryRotationSelector(BaseSelector):
 
         n_stocks = len(selected)
 
+        # 行业RS-Ratio加权（NEW in v19: 结构性改进）
+        # 用 RS-Ratio 作为行业权重（替代等权），让长期跑赢大盘的行业权重大
+        # 实现：行业权重 ∝ max(rs_ratio, 0)，归一化后应用 max_industry_weight 上限
+        #       行业内股票等权分配行业权重
+        # 与等权相比：能聚焦强势行业，但避免单一行业过度集中
+        use_industry_rs_weight = (
+            self.use_industry_weight_by_rs
+            and rrg_table is not None
+            and select_date_obj is not None
+        )
+        industry_weights: dict[str, float] | None = None
+        if use_industry_rs_weight:
+            try:
+                rrg_at_date_w = rrg_table.filter(
+                    pl.col("date").cast(pl.Date) == select_date_obj
+                )
+                if len(rrg_at_date_w) > 0:
+                    # 获取每个入选行业的RS-Ratio
+                    ind_rs = {
+                        r["industry"]: float(r["rs_ratio"])
+                        for r in rrg_at_date_w.iter_rows(named=True)
+                        if r["industry"] in top_industries
+                        and r.get("rs_ratio") is not None
+                    }
+                    # 只对有RS-Ratio数据的行业加权，其余行业用等权fallback
+                    if len(ind_rs) == len(top_industries) and len(ind_rs) > 0:
+                        # 行业权重 ∝ max(rs_ratio, 0)
+                        # 注意：不应用max_industry_weight截断
+                        # 因为截断+归一化会让所有行业变等权（当所有行业都>cap时）
+                        # 让RS-Ratio差异自然保留，由max_stock_weight间接限制行业权重
+                        raw_weights = {
+                            ind: max(rs, 0.0) for ind, rs in ind_rs.items()
+                        }
+                        total_rs = sum(raw_weights.values())
+                        if total_rs > 0:
+                            industry_weights = {
+                                ind: w / total_rs
+                                for ind, w in raw_weights.items()
+                            }
+                            logger.debug(
+                                f"行业RS-Ratio加权(无cap): "
+                                f"{[(ind, f'{w:.3f}') for ind, w in industry_weights.items()]}"
+                            )
+            except Exception as e:
+                logger.warning(f"行业RS-Ratio加权失败，回退等权: {e}")
+                industry_weights = None
+
         # 逆波动率加权（风险平价）或等权
         # 参考 Risk Parity 研究：逆波动率加权降低高波动股暴露，平滑收益
         if self.use_inv_vol_weight:
@@ -1517,8 +1575,29 @@ class IndustryRotationSelector(BaseSelector):
                 f"{max(vol_dict.values()):.4f}]"
             )
         else:
-            base_weight = 1.0 / n_stocks
-            weights = {code: base_weight for code in selected}
+            # 行业RS-Ratio加权：行业权重按RS-Ratio分配，行业内股票等权
+            # 否则：所有股票等权
+            if industry_weights is not None:
+                weights = {}
+                # 按行业分组selected股票
+                selected_by_industry: dict[str, list[str]] = {
+                    ind: [] for ind in top_industries
+                }
+                for code in selected:
+                    ind = industry_map.get(code, "")
+                    if ind in selected_by_industry:
+                        selected_by_industry[ind].append(code)
+                for ind, stocks_in_ind in selected_by_industry.items():
+                    if not stocks_in_ind:
+                        continue
+                    ind_w = industry_weights.get(ind, 0.0)
+                    # 行业内股票等权分配行业权重
+                    per_stock = ind_w / len(stocks_in_ind)
+                    for code in stocks_in_ind:
+                        weights[code] = per_stock
+            else:
+                base_weight = 1.0 / n_stocks
+                weights = {code: base_weight for code in selected}
 
         # 应用个股权重上限（逆波动率加权时跳过：风险平价本身就是风险控制，
         # 强制 cap 会将所有权重截断到上限后归一化为等权，破坏风险平价效果）

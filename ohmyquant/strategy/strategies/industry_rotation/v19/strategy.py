@@ -1,32 +1,24 @@
-"""行业轮动策略 v15（多周期RRG + 行业估值过滤）—— [SUPERSEDED by v20]
+"""行业轮动策略 v19（行业RS-Ratio加权：结构性改进）
 
-状态: superseded（已被 v20 取代，仅作历史参考）
-原因: v15 top_industries=5 冗余，实际OOS只有3个行业6只股票
-      v20 直接设 top_industries=3，更早聚焦强势行业
-      v15 IS Sharpe 0.4030 / OOS Sharpe 1.7018
-      v20 IS Sharpe 0.4739 / OOS Sharpe 2.2714（IS+OOS双优）
-
-v15 = v14 + 行业估值过滤（华商基金估值安全边际思路）
+v19 = v15 + 行业权重按RS-Ratio分配（替代等权）
 
 设计目的：
-  华商基金等行业轮动优秀基金公司重视"估值安全边际"
-  v14 在 OOS 表现优秀（+3.32%, Sharpe 1.7018），但完全依赖动量+RRG
-  加入估值过滤后，可规避"动量虚高+估值泡沫"的行业
+  v15 的行业权重是隐式等权（每行业 stocks_per_industry/n_stocks）
+  即使行业RS-Ratio差异很大（如105 vs 95），权重也相同
+  加入RS-Ratio加权后，长期跑赢大盘的行业（RS-Ratio>100）权重大
 
-v15 改进：
-  - 在 v14 基础上新增行业估值过滤层
-  - 使用 earnings_to_price_ratio(=1/PE) 作为估值代理
-  - E/P 历史分位 < 10%（即 PE 处于近250日90%分位以上）视为过贵，剔除
-  - 至少保留 3 个行业（避免全部被剔除）
+v19 改进：
+  - 在 v15 基础上新增行业RS-Ratio加权层
+  - 行业权重 ∝ max(rs_ratio, 0)，归一化
+  - 应用 max_industry_weight=0.25 上限（避免单一行业过度集中）
+  - 行业内股票等权分配行业权重
 
-估值过滤逻辑：
-  - 高 E/P = 便宜（低估） → 保留
-  - 低 E/P = 昂贵（高估） → 剔除
-  - 阈值：E/P 分位 < 0.10（即历史最低10% = 历史最贵10%）
+研究假设：
+  - RS-Ratio>100 的行业长期跑赢大盘，应给予更高权重
+  - 让强势行业贡献更多收益，弱势行业贡献更少
+  - 比 v15 等权更聚焦，但通过max_industry_weight避免过度集中
 
-研报参考：
-  - 华商基金：行业轮动重视估值安全边际
-  - 兴全基金：自下而上+估值锚定
+baseline: v15 (IS Sharpe 0.4030 / OOS Sharpe 1.7018 / OOS +3.32%)
 """
 from __future__ import annotations
 
@@ -34,25 +26,22 @@ from ohmyquant.strategy import register_strategy
 from ohmyquant.strategy.base import BaseStrategy
 
 
-@register_strategy("industry_rotation", "v15")
-class IndustryRotationStrategyV15(BaseStrategy):
-    """行业轮动策略 industry_rotation_v15 (multiperiod_rrg_pe_csi300, superseded)
-
-    状态: superseded by v20 (multiperiod_rrg_pe_top3_csi300)
-    """
+@register_strategy("industry_rotation", "v19")
+class IndustryRotationStrategyV19(BaseStrategy):
+    """行业轮动策略 industry_rotation_v19 (multiperiod_rrg_pe_industry_rs_weight_csi300, iter)"""
 
     @classmethod
     def from_version(
         cls, strategy_type: str, version: str, config: dict | None = None
-    ) -> "IndustryRotationStrategyV15":
-        if strategy_type != "industry_rotation" or version != "v15":
+    ) -> "IndustryRotationStrategyV19":
+        if strategy_type != "industry_rotation" or version != "v19":
             raise ValueError(f"不支持的策略版本: {strategy_type} {version}")
 
         base_config = {
             "strategy_type": "industry_rotation",
-            "strategy_version": "v15",
-            "strategy_name": "行业轮动策略 industry_rotation_v15 (multiperiod_rrg_pe_csi300, iter)",
-            "description": "多周期RRG+行业估值过滤(E/P分位)+沪深300:12因子+三重防御 [iter]",
+            "strategy_version": "v19",
+            "strategy_name": "行业轮动策略 industry_rotation_v19 (multiperiod_rrg_pe_industry_rs_weight_csi300, iter)",
+            "description": "多周期RRG+PE过滤+行业RS-Ratio加权:12因子+沪深300 [iter]",
             "backtest": {
                 "start_date": "2022-01-01",
                 "end_date": "2025-12-31",
@@ -85,7 +74,7 @@ class IndustryRotationStrategyV15(BaseStrategy):
                     "absolute_momentum_scale": 0.5,
                     "use_inv_vol_weight": False,
                     "inv_vol_window": 20,
-                    # RRG 多周期投票（同 v14）
+                    # RRG 多周期投票（同 v15）
                     "use_rrg": True,
                     "rs_ratio_window": 220,
                     "rs_momentum_window": 30,
@@ -93,12 +82,14 @@ class IndustryRotationStrategyV15(BaseStrategy):
                     "rs_momentum_vote_threshold": 2,
                     "rrg_momentum_threshold": 100.0,
                     "rrg_min_industries": 3,
-                    # 行业估值过滤（NEW in v15, 华商基金思路）
+                    # 行业估值过滤（同 v15）
                     "use_pe_filter": True,
                     "pe_factor": "earnings_to_price_ratio",
                     "pe_lookback": 250,
-                    "pe_expensive_percentile": 0.10,  # E/P 分位<10%视为过贵
+                    "pe_expensive_percentile": 0.10,
                     "pe_min_industries": 3,
+                    # 行业RS-Ratio加权（NEW in v19）
+                    "use_industry_weight_by_rs": True,
                     "use_factors": True,
                     "factor_names": [
                         "Price1M", "Price3M", "ROC20",

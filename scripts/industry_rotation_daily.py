@@ -8,10 +8,10 @@ T日早晨运行：下载T-1数据后，运行本脚本检查是否需要调仓�
 - 如无需调仓，显示当前持仓和下次调仓日
 
 用法:
-    python scripts/industry_rotation_daily.py                       # 默认 v15 检查最新数据日
-    python scripts/industry_rotation_daily.py --version v15         # 指定版本
+    python scripts/industry_rotation_daily.py                       # 默认 v30 检查最新数据日
+    python scripts/industry_rotation_daily.py --version v30         # 指定版本
     python scripts/industry_rotation_daily.py --date 2026-07-20     # 指定日期检查
-    python scripts/industry_rotation_daily.py --version v9          # 使用旧版本 v9
+    python scripts/industry_rotation_daily.py --version v23         # 使用旧版本 v23
 """
 from __future__ import annotations
 
@@ -31,13 +31,14 @@ from ohmyquant.strategy import StrategyRegistry, StrategyRunner
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_VERSION = "v15"  # 当前 final 版本（v9 为旧 final，已 superseded）
+DEFAULT_VERSION = "v30"  # 当前 final 版本（v23 为旧 final，已 superseded）
 DATA_ROOT = "D:/Work/Project/download_a_share/data"
 TEMPLATE_PATH = Path("templates/ths_pms_template.xlsx")
 OOS_START = "2026-06-01"
 TRANSACTION_COST_RATE = 0.001
 LOT_SIZE = 100
 CAPITAL = 10_000_000
+OUTPUT_DIR = Path(f"output/ths/industry_rotation_{DEFAULT_VERSION}")
 
 
 def get_latest_data_date(source: DuckDBSource) -> str:
