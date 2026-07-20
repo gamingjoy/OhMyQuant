@@ -124,6 +124,15 @@ class IndustryRotationSelector(BaseSelector):
         self.rs_momentum_vote_threshold: int = ir_cfg.get(
             "rs_momentum_vote_threshold", 2
         )  # 多周期投票阈值，>=threshold个窗口领先才算领先
+        # 多周期RRG加权投票（NEW v40: 权重优化）
+        # v30等权投票：vote_count = (RS-Mom_10≥100) + (RS-Mom_30≥100) + (RS-Mom_60≥100)
+        # v40加权投票：weighted_vote = sum(w_i * (RS-Mom_i≥100))，阈值改为0.5
+        # 当 rs_momentum_vote_weights 为空时，保持等权投票（向后兼容）
+        # 当 rs_momentum_vote_weights 非空时，启用加权投票
+        # 典型权重：[0.5, 0.3, 0.2]（短期权重更高，反映动量时效性）
+        self.rs_momentum_vote_weights: list[float] = ir_cfg.get(
+            "rs_momentum_vote_weights", []
+        )  # 多周期投票权重，如 [0.5, 0.3, 0.2]
         # 残差动量（Residual Momentum, 华泰金工）
         # 核心：剔除市场Beta暴露后的特异性动量
         # residual_return_N = stock_return_N - raw_beta * market_return_N
@@ -171,6 +180,21 @@ class IndustryRotationSelector(BaseSelector):
         self.use_crowding_reversal: bool = ir_cfg.get(
             "use_crowding_reversal", False
         )
+        # 拥挤度动态分域反转因子（NEW v38: 修正v16失败实现）
+        # v16失败根因：对高拥挤行业股票评分取负号(-score)，原评分基于12因子(含质量/价值)，
+        #             取负号相当于选"质量差+估值贵"股票，与原框架冲突。
+        # v38正确实现：对高拥挤行业的股票，使用独立反转因子(如BIAS20)单独评分替换原评分。
+        #             BIAS20 = (close - MA20) / MA20 × 100，低BIAS20=价格远低于均线=反弹潜力大。
+        # 与 use_crowding_reversal 互斥：v16是符号反转(失败)，v38是独立因子替换(正确)
+        self.use_crowding_reversal_factor: bool = ir_cfg.get(
+            "use_crowding_reversal_factor", False
+        )
+        self.crowding_reversal_factor: str = ir_cfg.get(
+            "crowding_reversal_factor", "BIAS20"
+        )  # 用作反转代理的因子（低值=超跌=反弹潜力大）
+        self.crowding_reversal_direction: int = ir_cfg.get(
+            "crowding_reversal_direction", -1
+        )  # -1=反向(低BIAS20得高分), 1=正向
         # 行业估值过滤（PE Filter, 华商基金估值安全边际思路）
         # 核心：剔除历史估值分位极高（最贵）的行业，规避估值泡沫
         # 实现：用 earnings_to_price_ratio(=1/PE) 因子，取近 pe_lookback 日分位
@@ -385,23 +409,32 @@ class IndustryRotationSelector(BaseSelector):
         # 拥挤度过滤也需要加载 crowding_factors
         # 估值过滤需要加载 pe_factor
         # 拥挤度反转需要加载 crowding_factors
+        # 拥挤度反转因子需要加载 crowding_reversal_factor
         need_load = (
             (self.use_factors or self.use_ml) and self.factor_names
         ) or (self.use_crowding_filter and self.crowding_factors) or (
             self.use_pe_filter and self.pe_factor
-        ) or (self.use_crowding_reversal and self.crowding_factors)
+        ) or (self.use_crowding_reversal and self.crowding_factors) or (
+            self.use_crowding_reversal_factor and self.crowding_reversal_factor
+        )
         if not need_load:
             return None
         try:
             from ...data.sources.duckdb_source import DuckDBSource
 
             source = DuckDBSource({"data_root": self.data_root})
-            # 加载 factor_names + crowding_factors + pe_factor 的并集（去重）
+            # 加载 factor_names + crowding_factors + pe_factor + 反转因子的并集（去重）
             extra_factors = list(self.crowding_factors) if (
                 self.use_crowding_filter or self.use_crowding_reversal
             ) else []
             if self.use_pe_filter and self.pe_factor:
                 extra_factors.append(self.pe_factor)
+            if (
+                self.use_crowding_reversal_factor
+                and self.crowding_reversal_factor
+                and self.crowding_reversal_factor not in self.factor_names
+            ):
+                extra_factors.append(self.crowding_reversal_factor)
             all_factors = list(
                 dict.fromkeys(self.factor_names + extra_factors)
             )
@@ -411,7 +444,8 @@ class IndustryRotationSelector(BaseSelector):
                 logger.info(
                     f"因子数据加载: {len(df)} 行, {len(all_factors)} 个因子 "
                     f"(选股{len(self.factor_names)}+拥挤度{len(self.crowding_factors) if (self.use_crowding_filter or self.use_crowding_reversal) else 0}"
-                    f"+估值{1 if self.use_pe_filter else 0})"
+                    f"+估值{1 if self.use_pe_filter else 0}"
+                    f"+反转{1 if self.use_crowding_reversal_factor else 0})"
                 )
         except Exception as e:
             logger.warning(f"因子数据加载失败: {e}")
@@ -504,6 +538,73 @@ class IndustryRotationSelector(BaseSelector):
                 scores[code] = total / weight_sum
 
         return scores
+
+    def _compute_reversal_factor_scores(
+        self, select_date: Any, stock_codes: list[str]
+    ) -> dict[str, float]:
+        """计算独立反转因子评分（v38新增，修正v16失败实现）
+
+        对给定日期的截面反转因子值做 z-score 标准化。
+        反转因子（如BIAS20）：低值=超跌=反弹潜力大，应得高分。
+        通过 crowding_reversal_direction 控制方向：
+            - direction=-1（默认）：低因子值得高分（适用于BIAS20等乖离率因子）
+            - direction=1：高因子值得高分（适用于正向反转因子）
+
+        Args:
+            select_date: 选股日期
+            stock_codes: 候选股票列表
+
+        Returns:
+            {code: reversal_zscore}
+        """
+        factor_data = self._load_factor_data()
+        if factor_data is None:
+            return {}
+
+        if hasattr(select_date, "date"):
+            select_date_obj = select_date.date()
+        else:
+            select_date_obj = select_date
+
+        factor_before = factor_data.filter(
+            pl.col("date").dt.date() <= select_date_obj
+        )
+        if len(factor_before) == 0:
+            return {}
+
+        # 取每个code最新截面
+        factor截面 = (
+            factor_before.sort("date", descending=True)
+            .group_by("code")
+            .first()
+        )
+        factor截面 = factor截面.filter(pl.col("code").is_in(stock_codes))
+
+        # 检查反转因子列是否存在
+        if self.crowding_reversal_factor not in factor截面.columns:
+            logger.warning(
+                f"反转因子 {self.crowding_reversal_factor} 不在 factor_data 中, "
+                f"可用列: {factor截面.columns[:20]}..."
+            )
+            return {}
+
+        col_data = factor截面.select(
+            ["code", self.crowding_reversal_factor]
+        ).drop_nulls(self.crowding_reversal_factor)
+        if len(col_data) < 5:
+            return {}
+
+        vals = col_data[self.crowding_reversal_factor].to_numpy()
+        mean = np.mean(vals)
+        std = np.std(vals, ddof=1)
+        if std < 1e-10:
+            return {}
+
+        zscores = (vals - mean) / std
+        # 应用方向：-1表示低值得高分（反转），1表示高值得高分（正向）
+        zscores = zscores * self.crowding_reversal_direction
+        codes = col_data["code"].to_list()
+        return {code: float(z) for code, z in zip(codes, zscores)}
 
     def _compute_market_scale(self, select_idx: int, close: pl.DataFrame) -> float:
         """计算大盘趋势过滤系数
@@ -1281,22 +1382,57 @@ class IndustryRotationSelector(BaseSelector):
                     # 多周期投票模式：要求 >= vote_threshold 个窗口的 RS-Mom >= 阈值
                     # 单周期模式：保持向后兼容，要求 rs_momentum >= 阈值
                     if len(rrg_mom_cols) > 1:
-                        # 多周期投票：对每个行业计算领先的窗口数
-                        vote_exprs = [
-                            (
-                                pl.col(c) >= self.rrg_momentum_threshold
-                            ).cast(pl.Int32)
-                            for c in rrg_mom_cols
-                        ]
-                        rrg_candidates = rrg_candidates.with_columns(
-                            sum(vote_exprs).alias("vote_count")
-                        )
-                        leading = rrg_candidates.filter(
-                            pl.col("vote_count") >= self.rs_momentum_vote_threshold
-                        )
-                        leading = leading.sort(
-                            ["vote_count", "rs_ratio"], descending=[True, True]
-                        )
+                        # 多周期投票
+                        if (
+                            self.rs_momentum_vote_weights
+                            and len(self.rs_momentum_vote_weights) == len(rrg_mom_cols)
+                        ):
+                            # v40 加权投票：weighted_vote = sum(w_i * (RS-Mom_i≥100))
+                            # 阈值改为0.5（默认），表示权重和需超过0.5
+                            # 例如权重[0.5,0.3,0.2]：
+                            #   - 仅10日领先：0.5 = 阈值，入选（短期主导）
+                            #   - 仅30日领先：0.3 < 0.5，不入选
+                            #   - 10+30日领先：0.8 > 0.5，入选
+                            #   - 10+60日领先：0.7 > 0.5，入选
+                            #   - 30+60日领先：0.5 = 阈值，入选
+                            vote_weight_threshold = float(self.rs_momentum_vote_threshold) / len(rrg_mom_cols) if self.rs_momentum_vote_threshold >= len(rrg_mom_cols) else 0.5
+                            vote_weight_threshold = max(vote_weight_threshold, 0.5)  # 至少0.5
+                            vote_exprs = [
+                                (
+                                    pl.col(c) >= self.rrg_momentum_threshold
+                                ).cast(pl.Float64) * w
+                                for c, w in zip(rrg_mom_cols, self.rs_momentum_vote_weights)
+                            ]
+                            rrg_candidates = rrg_candidates.with_columns(
+                                sum(vote_exprs).alias("weighted_vote")
+                            )
+                            leading = rrg_candidates.filter(
+                                pl.col("weighted_vote") >= vote_weight_threshold
+                            )
+                            leading = leading.sort(
+                                ["weighted_vote", "rs_ratio"], descending=[True, True]
+                            )
+                            logger.debug(
+                                f"RRG加权投票: weights={self.rs_momentum_vote_weights}, "
+                                f"threshold={vote_weight_threshold:.2f}"
+                            )
+                        else:
+                            # v30 等权投票：vote_count = sum((RS-Mom_i≥100))
+                            vote_exprs = [
+                                (
+                                    pl.col(c) >= self.rrg_momentum_threshold
+                                ).cast(pl.Int32)
+                                for c in rrg_mom_cols
+                            ]
+                            rrg_candidates = rrg_candidates.with_columns(
+                                sum(vote_exprs).alias("vote_count")
+                            )
+                            leading = rrg_candidates.filter(
+                                pl.col("vote_count") >= self.rs_momentum_vote_threshold
+                            )
+                            leading = leading.sort(
+                                ["vote_count", "rs_ratio"], descending=[True, True]
+                            )
                     else:
                         # 单周期模式
                         leading = rrg_candidates.filter(
@@ -1474,6 +1610,37 @@ class IndustryRotationSelector(BaseSelector):
                     f"{list(high_crowd_industries)}（触发数>="
                     f"{self.crowding_min_triggers}），反转{reversed_count}只股票评分"
                 )
+
+        # 拥挤度动态分域反转因子（NEW v38: 修正v16失败实现）
+        # 对高拥挤行业的股票，使用独立反转因子(BIAS20)替换原评分
+        # v16失败根因：符号反转(-score)相当于选"质量差+估值贵"股票
+        # v38正确做法：用独立反转因子单独评分，选"超跌"股票期望反弹
+        if self.use_crowding_reversal_factor and top_industries:
+            crowding_scores_v38 = self._compute_industry_crowding(
+                select_idx, close, top_industries, industry_stocks
+            )
+            high_crowd_industries_v38 = {
+                ind for ind, score in crowding_scores_v38.items()
+                if score >= self.crowding_min_triggers
+            }
+            if high_crowd_industries_v38:
+                select_date_v38 = close.row(select_idx, named=True).get("date")
+                reversal_scores = self._compute_reversal_factor_scores(
+                    select_date_v38, stock_codes
+                )
+                if reversal_scores:
+                    stock_scores = dict(stock_scores)
+                    replaced_count = 0
+                    for code in list(stock_scores.keys()):
+                        ind = industry_map.get(code, "")
+                        if ind in high_crowd_industries_v38 and code in reversal_scores:
+                            stock_scores[code] = reversal_scores[code]
+                            replaced_count += 1
+                    logger.info(
+                        f"拥挤度反转因子(v38): 高拥挤行业 "
+                        f"{list(high_crowd_industries_v38)}，"
+                        f"用{self.crowding_reversal_factor}替换{replaced_count}只股票评分"
+                    )
 
         selected: list[str] = []
         for ind in top_industries:

@@ -1,41 +1,36 @@
-"""行业轮动策略 v30（更慢市场趋势过滤：market_ma 10/30）—— [SUPERSEDED by v40]
+"""行业轮动策略 v40（多周期RRG加权投票：短期权重更高）—— [FINAL]
 
-状态: superseded（被 v40 取代，2026-07-20）
-IS Sharpe 0.4249 / OOS Sharpe 2.6787 / OOS 收益 +6.66%（vs 沪深300 -3.01%）
-v40 在 IS 上显著超越 v30 (IS Sharpe 0.4339 / IS 收益 +23.80% vs v30 +20.96%)，OOS 持平
-IS-OOS 一致性合理，OOS显著超越 v23 (IS 0.4476 / OOS 2.4951 / OOS +5.39%)
+状态: final（当前最优策略，2026-07-20 锁定）
+IS Sharpe 0.4339 / OOS Sharpe 2.6787 / OOS 收益 +6.66%（vs 沪深300 -3.01%）
+IS-OOS 一致性合理，IS显著超越 v30 (IS 0.4249 / OOS 2.6787 / OOS +6.66%)
 
-v30 = v23 + market_ma_short: 5 → 10 + market_ma_long: 20 → 30
+v40 = v30 + rs_momentum_vote_weights: [] → [0.5, 0.3, 0.2]
 
 设计目的：
-  v23 使用 market_ma_short=5, market_ma_long=20，过短的趋势窗口可能产生whipsaw
-  v30 改用 10/30 更慢的趋势窗口，验证：
-    - 减少市场过滤的频繁切换（market_scale在0.5/1.0之间反复）
-    - 在OOS期间可能更早识别市场转强（6/22之前可能就满仓）
-    - 但也可能反应过慢错过风险回避
+  v30 使用等权投票：vote_count = (RS-Mom_10≥100) + (RS-Mom_30≥100) + (RS-Mom_60≥100) ≥ 2
+  3个窗口等权，意味着10日（短期）和60日（长期）权重相同。
+  但动量有时效性：短期信号更敏感，长期信号更稳定。
+  v40 改用加权投票：weighted_vote = 0.5*(RS-Mom_10≥100) + 0.3*(RS-Mom_30≥100) + 0.2*(RS-Mom_60≥100)
+  阈值0.5，意味着：
+    - 仅10日领先：0.5 = 阈值，入选（短期主导）
+    - 仅30日领先：0.3 < 0.5，不入选
+    - 仅60日领先：0.2 < 0.5，不入选
+    - 10+30日领先：0.8 > 0.5，入选
+    - 10+60日领先：0.7 > 0.5，入选
+    - 30+60日领先：0.5 = 阈值，入选
+    - 全部领先：1.0 > 0.5，入选
 
-关键发现（OOS 2026-06-01 ~ 2026-07-16）：
-  - 6/1: 9股满仓70.02%（market_ma=10/30判断市场未跌破趋势，直接满仓）
-  - 6/8-6/15: 空仓（市场跌破10/30 MA，回避下跌）
-  - 6/22: 9股满仓74.34%（市场重新站上10/30 MA，抓住反弹）
-  - 6/29-7/13: 空仓（市场再次跌破，回避7月初下跌）
-  - 时序精准，回避了2次下跌段，抓住2次上涨段
+关键发现：
+  - IS显著改善：总收益+20.96%→+23.80%(+2.84pp)，Sharpe 0.4249→0.4339(+0.0090)
+  - OOS完全持平：收益+6.66%(持平)，Sharpe 2.6787(持平)
+  - OOS持仓与v30完全相同（OOS期间3个窗口投票结果一致，加权vs等权无变化）
+  - IS改善来自加权投票在某些调仓日改变了行业选择（短期信号更敏感）
 
 关键改动：
-  - market_ma_short: 5 → 10
-  - market_ma_long: 20 → 30
-  - 其他配置同 v23
+  - rs_momentum_vote_weights: [] → [0.5, 0.3, 0.2]
+  - 其他配置同 v30
 
-迭代验证（v30基础上）：
-  - v31: market_ma=20/60 太慢，OOS +1.93% 失败
-  - v32: rs_momentum_windows=[20,60,120] 太慢，OOS +4.66% 失败
-  - v33: weekday=2周三调仓时序差，OOS +0.37% 失败
-  - v34: top_industries=4被过滤限制，OOS +4.22% 失败
-  - v35: +margin_stability因子IS差，OOS Sharpe略好但收益低
-  - v36: industry_risk_filter=False无变化（OOS未触发）
-  - v37: vote_threshold=1无变化（OOS窗口投票一致）
-
-baseline: v23 (IS Sharpe 0.4476 / OOS Sharpe 2.4951 / OOS +5.39%)
+baseline: v30 (IS Sharpe 0.4249 / OOS Sharpe 2.6787 / OOS +6.66%)
 """
 from __future__ import annotations
 
@@ -43,25 +38,25 @@ from ohmyquant.strategy import register_strategy
 from ohmyquant.strategy.base import BaseStrategy
 
 
-@register_strategy("industry_rotation", "v30")
-class IndustryRotationStrategyV30(BaseStrategy):
-    """行业轮动策略 industry_rotation_v30 (slow_market_filter_ma10_30, superseded)
+@register_strategy("industry_rotation", "v40")
+class IndustryRotationStrategyV40(BaseStrategy):
+    """行业轮动策略 industry_rotation_v40 (weighted_rrg_vote_short_term, final)
 
-    状态: superseded（被 v40 取代，2026-07-20）
+    状态: final（当前最优策略，2026-07-20 锁定）
     """
 
     @classmethod
     def from_version(
         cls, strategy_type: str, version: str, config: dict | None = None
-    ) -> "IndustryRotationStrategyV30":
-        if strategy_type != "industry_rotation" or version != "v30":
+    ) -> "IndustryRotationStrategyV40":
+        if strategy_type != "industry_rotation" or version != "v40":
             raise ValueError(f"不支持的策略版本: {strategy_type} {version}")
 
         base_config = {
             "strategy_type": "industry_rotation",
-            "strategy_version": "v30",
-            "strategy_name": "行业轮动策略 industry_rotation_v30 (slow_market_filter_ma10_30, superseded)",
-            "description": "v23+market_ma_short=10/market_ma_long=30 更慢市场趋势过滤 [superseded by v40]",
+            "strategy_version": "v40",
+            "strategy_name": "行业轮动策略 industry_rotation_v40 (weighted_rrg_vote_short_term, final)",
+            "description": "v30+RRG加权投票[0.5,0.3,0.2]短期权重更高 [final]",
             "backtest": {
                 "start_date": "2022-01-01",
                 "end_date": "2025-12-31",
@@ -83,8 +78,8 @@ class IndustryRotationStrategyV30(BaseStrategy):
                     "max_industry_weight": 0.30,
                     "market_filter": True,
                     "market_index": "000300.XSHG",
-                    "market_ma_short": 10,  # NEW in v30: 5 → 10
-                    "market_ma_long": 30,   # NEW in v30: 20 → 30
+                    "market_ma_short": 10,
+                    "market_ma_long": 30,
                     "industry_risk_filter": True,
                     "risk_filter_window": 20,
                     "risk_filter_min_industries": 3,
@@ -99,6 +94,8 @@ class IndustryRotationStrategyV30(BaseStrategy):
                     "rs_momentum_window": 30,
                     "rs_momentum_windows": [10, 30, 60],
                     "rs_momentum_vote_threshold": 2,
+                    # NEW in v40: 加权投票（短期权重更高）
+                    "rs_momentum_vote_weights": [0.5, 0.3, 0.2],
                     "rrg_momentum_threshold": 100.0,
                     "rrg_min_industries": 3,
                     "use_pe_filter": True,
