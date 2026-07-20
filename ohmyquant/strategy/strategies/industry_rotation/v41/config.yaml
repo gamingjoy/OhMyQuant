@@ -1,10 +1,10 @@
-# 行业轮动策略 v40 配置（多周期RRG加权投票：短期权重更高）—— [SUPERSEDED by v41]
-# v40 = v30 + rs_momentum_vote_weights: [] → [0.5, 0.3, 0.2]
-# IS Sharpe 0.4339 / OOS Sharpe 2.6787 / OOS +6.66% (被v41取代：v41 IS更优，OOS持平)
+# 行业轮动策略 v41 配置（RRG加权投票权重优化：中期主导）—— [FINAL]
+# v41 = v40 + rs_momentum_vote_weights: [0.5, 0.3, 0.2] → [0.3, 0.4, 0.3]
+# IS Sharpe 0.4803 / OOS Sharpe 2.6787 / OOS +6.66% (IS显著超越v40，OOS持平)
 strategy_type: industry_rotation
-strategy_version: v40
-strategy_name: "行业轮动策略 industry_rotation_v40 (weighted_rrg_vote_short_term, superseded)"
-description: "v30+RRG加权投票[0.5,0.3,0.2]短期权重更高 [superseded by v41]"
+strategy_version: v41
+strategy_name: "行业轮动策略 industry_rotation_v41 (weighted_rrg_vote_mid_term, final)"
+description: "v40+RRG加权投票权重优化[0.3,0.4,0.3]中期主导 [final]"
 
 backtest:
   start_date: "2022-01-01"
@@ -43,8 +43,8 @@ selection:
     rs_momentum_window: 30
     rs_momentum_windows: [10, 30, 60]
     rs_momentum_vote_threshold: 2
-    # NEW in v40: 加权投票（短期权重更高）
-    rs_momentum_vote_weights: [0.5, 0.3, 0.2]
+    # NEW in v41: 权重优化（中期主导，30日动量甜蜜点）
+    rs_momentum_vote_weights: [0.3, 0.4, 0.3]
     rrg_momentum_threshold: 100.0
     rrg_min_industries: 3
     use_pe_filter: true
