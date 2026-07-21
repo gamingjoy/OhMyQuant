@@ -227,6 +227,26 @@ class IndustryRotationSelector(BaseSelector):
         self.pe_vote_adjust_alpha: float = ir_cfg.get(
             "pe_vote_adjust_alpha", 0.2
         )  # PE调节强度，0.2表示最大±0.1的调节
+        # v45: 震荡市PE调节强度（regime-aware PE adjustment）
+        # 当 market_scale < 1.0（震荡市）时使用此alpha，默认None=向后兼容（始终用pe_vote_adjust_alpha）
+        # 设计动机：v43在2024(震荡市)Sharpe 0.1053 < v41 0.1826，PE调节在震荡市反而有害（value trap）
+        #           v43在2025(趋势市)Sharpe 2.0319 > v41 1.6716，PE调节在趋势市有效
+        # 实现：market_scale>=1.0时用pe_vote_adjust_alpha，<1.0时用pe_vote_adjust_alpha_choppy
+        self.pe_vote_adjust_alpha_choppy: float | None = ir_cfg.get(
+            "pe_vote_adjust_alpha_choppy", None
+        )
+        # v47: PB分位作为RRG投票权重调节因子（双估值调节）
+        # 核心：在PE调节基础上叠加PB调节，提供资产估值维度
+        # 动机：PE只反映盈利估值，PB反映资产估值，两者互补
+        #       2024年PE调节失效可能因盈利估值信号噪声大，PB提供更稳定的资产估值信号
+        # 实现：adjusted_vote = weighted_vote + alpha_ep*(ep_pct-0.5) + alpha_bp*(bp_pct-0.5)
+        # 默认alpha_bp=0.0（向后兼容），v47设alpha_ep=0.1+alpha_bp=0.1（总强度0.2同v43）
+        self.pe_vote_adjust_alpha_pb: float = ir_cfg.get(
+            "pe_vote_adjust_alpha_pb", 0.0
+        )
+        self.pb_factor: str = ir_cfg.get(
+            "pb_factor", "book_to_price_ratio"
+        )
         # 行业RS-Ratio加权（NEW in v19: 结构性改进）
         # 核心：用 RS-Ratio 作为行业权重（替代等权），让长期跑赢大盘的行业权重大
         # 研究假设：RS-Ratio>100 表示行业长期跑赢大盘，应给予更高权重
@@ -931,6 +951,7 @@ class IndustryRotationSelector(BaseSelector):
         close: pl.DataFrame,
         top_industries: list[str],
         industry_stocks: dict[str, list[str]],
+        factor_name: str | None = None,
     ) -> dict[str, float]:
         """计算行业估值分位（华商基金估值安全边际思路）
 
@@ -947,6 +968,7 @@ class IndustryRotationSelector(BaseSelector):
             close: 候选池收盘价宽表（用于获取 select_date）
             top_industries: 候选行业列表
             industry_stocks: {industry: [code1, code2, ...]}
+            factor_name: 估值因子名（v47新增，默认None用self.pe_factor）
 
         Returns:
             {industry: ep_percentile}  ep_percentile in [0, 1]
@@ -963,10 +985,13 @@ class IndustryRotationSelector(BaseSelector):
         else:
             select_date_obj = select_date_raw
 
+        # v47: 支持任意估值因子（默认self.pe_factor向后兼容）
+        use_factor = factor_name if factor_name is not None else self.pe_factor
+
         # 检查因子列
-        if self.pe_factor not in factor_data.columns:
+        if use_factor not in factor_data.columns:
             logger.warning(
-                f"估值因子 {self.pe_factor} 不在 factor_data 中, "
+                f"估值因子 {use_factor} 不在 factor_data 中, "
                 f"可用列: {factor_data.columns[:20]}..."
             )
             return {ind: 0.5 for ind in top_industries}
@@ -998,7 +1023,7 @@ class IndustryRotationSelector(BaseSelector):
             # 按日期聚合（行业截面均值，排除极端值）
             daily_ind = (
                 ind_data.group_by("date")
-                .agg(pl.col(self.pe_factor).mean().alias("factor_val"))
+                .agg(pl.col(use_factor).mean().alias("factor_val"))
                 .drop_nulls("factor_val")
                 .sort("date")
             )
@@ -1434,28 +1459,75 @@ class IndustryRotationSelector(BaseSelector):
                             # adjusted_vote = weighted_vote + alpha * (ep_percentile - 0.5)
                             # 便宜行业（ep_percentile高）加分，昂贵行业（ep_percentile低）减分
                             if self.use_pe_adjusted_rrg_vote:
-                                pe_percentiles_v43 = self._compute_industry_pe_percentile(
-                                    select_idx, close,
-                                    rrg_candidates["industry"].to_list(),
-                                    industry_stocks,
-                                )
-                                # 给每个行业计算PE调节项并叠加到weighted_vote
-                                pe_adjustments = [
-                                    float(
-                                        self.pe_vote_adjust_alpha
-                                        * (pe_percentiles_v43.get(ind, 0.5) - 0.5)
+                                # v45 regime-aware: 趋势市(market_scale>=1.0)用alpha，
+                                # 震荡市(market_scale<1.0)用alpha_choppy（若配置）
+                                if (
+                                    self.pe_vote_adjust_alpha_choppy is not None
+                                    and market_scale < 1.0
+                                ):
+                                    effective_alpha = self.pe_vote_adjust_alpha_choppy
+                                    regime_label = "震荡市"
+                                else:
+                                    effective_alpha = self.pe_vote_adjust_alpha
+                                    regime_label = "趋势市"
+
+                                # v47: 计算总估值调节项（E/P + B/P双估值）
+                                total_adjustments: list[float] = []
+                                has_any_adjustment = False
+
+                                # E/P 调节
+                                if effective_alpha > 0:
+                                    pe_percentiles_v43 = self._compute_industry_pe_percentile(
+                                        select_idx, close,
+                                        rrg_candidates["industry"].to_list(),
+                                        industry_stocks,
                                     )
-                                    for ind in rrg_candidates["industry"].to_list()
-                                ]
-                                rrg_candidates = rrg_candidates.with_columns(
-                                    pl.Series("pe_adjustment", pe_adjustments, dtype=pl.Float64)
-                                ).with_columns(
-                                    (pl.col("weighted_vote") + pl.col("pe_adjustment")).alias("weighted_vote")
-                                )
-                                logger.debug(
-                                    f"v43 PE调节RRG投票: alpha={self.pe_vote_adjust_alpha}, "
-                                    f"调节范围=[{-0.5*self.pe_vote_adjust_alpha:.3f}, {0.5*self.pe_vote_adjust_alpha:.3f}]"
-                                )
+                                    ep_adjustments = [
+                                        float(
+                                            effective_alpha
+                                            * (pe_percentiles_v43.get(ind, 0.5) - 0.5)
+                                        )
+                                        for ind in rrg_candidates["industry"].to_list()
+                                    ]
+                                    has_any_adjustment = True
+                                else:
+                                    ep_adjustments = [0.0] * len(rrg_candidates)
+
+                                # B/P 调节（v47 NEW，与E/P独立，不受regime影响）
+                                if self.pe_vote_adjust_alpha_pb > 0:
+                                    pb_percentiles = self._compute_industry_pe_percentile(
+                                        select_idx, close,
+                                        rrg_candidates["industry"].to_list(),
+                                        industry_stocks,
+                                        factor_name=self.pb_factor,
+                                    )
+                                    bp_adjustments = [
+                                        float(
+                                            self.pe_vote_adjust_alpha_pb
+                                            * (pb_percentiles.get(ind, 0.5) - 0.5)
+                                        )
+                                        for ind in rrg_candidates["industry"].to_list()
+                                    ]
+                                    has_any_adjustment = True
+                                else:
+                                    bp_adjustments = [0.0] * len(rrg_candidates)
+
+                                # 合并 E/P + B/P 调节项
+                                if has_any_adjustment:
+                                    total_adjustments = [
+                                        ep + bp
+                                        for ep, bp in zip(ep_adjustments, bp_adjustments)
+                                    ]
+                                    rrg_candidates = rrg_candidates.with_columns(
+                                        pl.Series("pe_adjustment", total_adjustments, dtype=pl.Float64)
+                                    ).with_columns(
+                                        (pl.col("weighted_vote") + pl.col("pe_adjustment")).alias("weighted_vote")
+                                    )
+                                    logger.debug(
+                                        f"v43/v45/v47 估值调节RRG投票: {regime_label} "
+                                        f"alpha_ep={effective_alpha}, alpha_bp={self.pe_vote_adjust_alpha_pb}, "
+                                        f"调节范围=[{min(total_adjustments):.3f}, {max(total_adjustments):.3f}]"
+                                    )
 
                             leading = rrg_candidates.filter(
                                 pl.col("weighted_vote") >= vote_weight_threshold
