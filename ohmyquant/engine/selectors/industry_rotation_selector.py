@@ -260,6 +260,20 @@ class IndustryRotationSelector(BaseSelector):
         self.use_factors: bool = ir_cfg.get("use_factors", False)
         self.factor_names: list[str] = ir_cfg.get("factor_names", [])
         self.factor_weights: dict[str, float] = ir_cfg.get("factor_weights", {})
+        # v49: IC加权替代等权因子（结构性改进，缓解因子时变问题）
+        # 核心：用滚动rank IC作为因子权重幅度，保留静态权重方向
+        # 动机：v45-v48参数调整均无法解决因子时变问题，IC加权让因子权重自适应近期表现
+        # 实现：w_final = sign(w_static) * |mean(rank_IC)| / sum(|w_final|) 归一化
+        # 优势：近期有效因子权重大，失效因子权重小，自动适应市场环境变化
+        self.use_ic_weighting: bool = ir_cfg.get("use_ic_weighting", False)
+        self.ic_lookback: int = ir_cfg.get(
+            "ic_lookback", 60
+        )  # IC回看窗口（约3个月）
+        self.ic_horizon: int = ir_cfg.get(
+            "ic_horizon", 5
+        )  # 前向收益horizon（约1周）
+        self._ic_weights_cache: dict[str, dict[str, float]] | None = None
+        self._ic_weights_cache_date: Any = None
         # ML选股（LightGBM预测未来收益）
         self.use_ml: bool = ir_cfg.get("use_ml", False)
         self.ml_train_window: int = ir_cfg.get("ml_train_window", 252)
@@ -495,8 +509,142 @@ class IndustryRotationSelector(BaseSelector):
             self._factor_data = None
         return self._factor_data
 
+    def _compute_factor_ic_weights(
+        self,
+        select_date: Any,
+        stock_codes: list[str],
+        close: pl.DataFrame,
+    ) -> dict[str, float]:
+        """计算因子滚动rank IC权重（v49新增）
+
+        对每个因子在 ic_lookback 窗口内计算 rank IC（Spearman相关），
+        返回 mean(rank_IC) 作为因子权重幅度。
+
+        IC计算流程：
+          1. 将close转为长格式，计算前向收益 forward_return[T] = close[T+h]/close[T]-1
+          2. 与factor_data按(date, code)关联
+          3. 对每个日期T，计算因子值排名与收益排名的Pearson相关（=Spearman）
+          4. 对lookback窗口内所有有效日期的IC取均值
+
+        Args:
+            select_date: 选股日期
+            stock_codes: 候选股票列表（用于过滤）
+            close: 收盘价宽表（date + 各code列）
+
+        Returns:
+            {factor_name: mean_rank_ic}  IC值范围[-1, 1]
+        """
+        # 缓存：同一select_date不重复计算
+        if (
+            self._ic_weights_cache is not None
+            and self._ic_weights_cache_date == select_date
+        ):
+            return self._ic_weights_cache
+
+        factor_data = self._load_factor_data()
+        if factor_data is None:
+            return {}
+
+        if hasattr(select_date, "date"):
+            select_date_obj = select_date.date()
+        else:
+            select_date_obj = select_date
+
+        from datetime import timedelta
+
+        lookback_start = select_date_obj - timedelta(days=self.ic_lookback)
+        # 前向收益需要select_date - ic_horizon 之前的数据（避免前视偏差）
+        forward_end = select_date_obj - timedelta(days=self.ic_horizon)
+
+        # 1. close转长格式并计算前向收益
+        close_cols = [c for c in close.columns if c != "date"]
+        close_long = close.melt(
+            id_vars="date", variable_name="code", value_name="close"
+        )
+        # 统一date类型为date（close可能是datetime，factor_data是date）
+        close_long = close_long.with_columns(pl.col("date").dt.date().alias("date"))
+        close_long = close_long.filter(pl.col("code").is_in(stock_codes))
+        close_long = close_long.sort(["code", "date"])
+        close_long = close_long.with_columns(
+            pl.col("close").shift(-self.ic_horizon).over("code").alias("close_fwd")
+        )
+        close_long = close_long.with_columns(
+            ((pl.col("close_fwd") / pl.col("close")) - 1.0).alias("fwd_return")
+        )
+        close_long = close_long.drop_nulls("fwd_return")
+
+        # 2. 过滤到lookback窗口
+        close_long = close_long.filter(
+            (pl.col("date") >= lookback_start)
+            & (pl.col("date") <= forward_end)
+        )
+        if len(close_long) == 0:
+            return {}
+
+        # 3. 关联factor_data（确保date类型一致）
+        factor_cols = [
+            c for c in factor_data.columns if c in self.factor_names
+        ]
+        if not factor_cols:
+            return {}
+
+        # 确保factor_data的date也是date类型（可能为datetime）
+        factor_subset = factor_data.select(["date", "code"] + factor_cols)
+        if factor_subset["date"].dtype != pl.Date:
+            factor_subset = factor_subset.with_columns(
+                pl.col("date").dt.date().alias("date")
+            )
+
+        joined = factor_subset.join(
+            close_long.select(["date", "code", "fwd_return"]),
+            on=["date", "code"],
+            how="inner",
+        )
+        if len(joined) == 0:
+            return {}
+
+        # 4. 对每个因子计算滚动rank IC
+        ic_weights: dict[str, float] = {}
+        for factor_name in factor_cols:
+            col_data = joined.select(
+                ["date", "code", factor_name, "fwd_return"]
+            ).drop_nulls()
+            if len(col_data) < 20:  # 数据不足
+                continue
+
+            # 计算每日rank IC（Pearson on ranks = Spearman）
+            ranked = col_data.with_columns(
+                [
+                    pl.col(factor_name).rank().over("date").alias("factor_rank"),
+                    pl.col("fwd_return").rank().over("date").alias("return_rank"),
+                ]
+            )
+            ic_per_date = (
+                ranked.group_by("date")
+                .agg(
+                    pl.corr("factor_rank", "return_rank").alias("ic")
+                )
+                .drop_nulls("ic")
+            )
+            if len(ic_per_date) < 5:  # 有效日期不足
+                continue
+
+            mean_ic = float(ic_per_date["ic"].mean())
+            ic_weights[factor_name] = mean_ic
+
+        # 缓存
+        self._ic_weights_cache = ic_weights
+        self._ic_weights_cache_date = select_date
+
+        logger.info(
+            f"IC权重计算完成: {len(ic_weights)}/{len(factor_cols)} 个因子, "
+            f"lookback={self.ic_lookback}d, horizon={self.ic_horizon}d"
+        )
+        return ic_weights
+
     def _compute_factor_scores(
-        self, select_date: Any, stock_codes: list[str]
+        self, select_date: Any, stock_codes: list[str],
+        close: pl.DataFrame | None = None,
     ) -> dict[str, float]:
         """计算多因子复合评分
 
@@ -568,13 +716,26 @@ class IndustryRotationSelector(BaseSelector):
         if not factor_scores:
             return {}
 
+        # v49: IC加权（启用时用滚动rank IC作为权重幅度，保留静态权重方向）
+        ic_weights: dict[str, float] = {}
+        if self.use_ic_weighting and close is not None:
+            ic_weights = self._compute_factor_ic_weights(
+                select_date, stock_codes, close
+            )
+
         # 加权求和（支持负权重实现反向因子：weight_sum 用 abs(w) 归一化）
         for code in stock_codes:
             total = 0.0
             weight_sum = 0.0
             for factor_name, code_scores in factor_scores.items():
                 if code in code_scores:
-                    w = self.factor_weights.get(factor_name, 1.0)
+                    w_static = self.factor_weights.get(factor_name, 1.0)
+                    if self.use_ic_weighting and factor_name in ic_weights:
+                        # v49: w_final = sign(w_static) * |IC|
+                        # IC幅度替代静态幅度，方向保留静态
+                        w = float(np.sign(w_static) * abs(ic_weights[factor_name]))
+                    else:
+                        w = w_static
                     total += w * code_scores[code]
                     weight_sum += abs(w)
             if weight_sum > 0:
@@ -1696,12 +1857,12 @@ class IndustryRotationSelector(BaseSelector):
             elif self.use_factors:
                 # ML失败时回退到因子评分
                 select_date = close.row(select_idx, named=True).get("date")
-                factor_scores = self._compute_factor_scores(select_date, stock_codes)
+                factor_scores = self._compute_factor_scores(select_date, stock_codes, close)
                 if factor_scores:
                     stock_scores = factor_scores
         elif self.use_factors:
             select_date = close.row(select_idx, named=True).get("date")
-            factor_scores = self._compute_factor_scores(select_date, stock_codes)
+            factor_scores = self._compute_factor_scores(select_date, stock_codes, close)
             if factor_scores:
                 stock_scores = factor_scores
                 logger.debug(
