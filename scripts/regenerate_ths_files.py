@@ -17,14 +17,15 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-# 复用 daily 脚本的全部函数
-from industry_rotation_daily import (
+# THS 通用工具从框架层引用
+from ohmyquant.execution.ths_utils import (
     generate_trades,
     get_open_prices,
     replay_history,
-    run_oos_backtest,
     write_xlsx,
 )
+# run_oos_backtest 仍从 daily 脚本引用(策略专属逻辑)
+from industry_rotation_daily import run_oos_backtest
 from ohmyquant.data.sources.duckdb_source import DuckDBSource
 
 DATA_ROOT = "D:/Work/Project/download_a_share/data"

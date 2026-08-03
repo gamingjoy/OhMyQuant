@@ -29,15 +29,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import numpy as np
 
 from ohmyquant.data.sources.duckdb_source import DuckDBSource
-from ohmyquant.strategy import StrategyRegistry
-from industry_rotation_daily import (
-    generate_trades,
-    get_open_prices,
-    write_xlsx,
-    replay_history,
+from ohmyquant.execution.ths_utils import (
     CAPITAL,
     TRANSACTION_COST_RATE,
+    generate_trades,
+    get_open_prices,
+    replay_history,
+    write_xlsx,
 )
+from ohmyquant.strategy import StrategyRegistry
 
 STRATEGY_NAME = "expertforest_v1"
 DATA_ROOT = "D:/Work/Project/download_a_share/data"
