@@ -1,13 +1,15 @@
 """行业轮动策略 OOS 净值分析
 
-基于同花顺实际交易文件（output/ths/industry_rotation_v7/）回放建仓与调仓，
+基于同花顺实际交易文件回放建仓与调仓，
 计算 2026-06-01 以来的净值表现，对比沪深300，并给出优化建议。
 
 用法:
-    python scripts/industry_rotation_nav_analysis.py
+    python scripts/industry_rotation_nav_analysis.py              # 默认 v53
+    python scripts/industry_rotation_nav_analysis.py --version v63
 """
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -21,7 +23,6 @@ from ohmyquant.data.sources.duckdb_source import DuckDBSource
 
 CAPITAL = 10_000_000
 COST_RATE = 0.001
-THS_DIR = Path("output/ths/industry_rotation_v7")
 BENCHMARK = "000300.XSHG"  # 沪深300
 DATA_ROOT = "D:/Work/Project/download_a_share/data"
 OOS_START = "2026-06-01"
@@ -84,10 +85,17 @@ def replay_all_trades(files: list[Path]) -> tuple[dict[str, dict[str, int]], dic
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--version", default="v53", help="策略版本(默认 v53)")
+    args = parser.parse_args()
+    version = args.version
+
+    ths_dir = Path(f"output/ths/industry_rotation_{version}")
+
     # 1. 加载交易文件
-    files = sorted(THS_DIR.glob("*.xlsx"))
+    files = sorted(ths_dir.glob("*.xlsx"))
     if not files:
-        print(f"未找到交易文件: {THS_DIR}")
+        print(f"未找到交易文件: {ths_dir}")
         return
 
     print(f"加载 {len(files)} 个交易文件:")
@@ -233,7 +241,7 @@ def main():
 
     # 8. 输出报告
     print("\n" + "=" * 70)
-    print(f"  行业轮动策略 v7 OOS 净值分析 ({OOS_START} → {latest_date})")
+    print(f"  行业轮动策略 {version} OOS 净值分析 ({OOS_START} → {latest_date})")
     print("=" * 70)
     print(f"  交易日数:     {n_days}")
     print(f"  调仓次数:     {len(trade_dates)}")

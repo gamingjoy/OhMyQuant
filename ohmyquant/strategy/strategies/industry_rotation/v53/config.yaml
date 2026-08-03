@@ -1,11 +1,13 @@
-# 行业轮动策略 v43 配置（PE分位作为RRG投票权重调节因子）—— [SUPERSEDED]
-# v43 = v41 + use_pe_adjusted_rrg_vote: true + pe_vote_adjust_alpha: 0.2
-# 状态: superseded（2026-07-21 被 v53 取代）
-# baseline: v41 (IS Sharpe 0.4803 / OOS Sharpe 2.6787 / OOS +6.66%)
+# 行业轮动策略 v53 配置（因子正交化：B/P对E/P正交化）—— [FINAL]
+# v53 = v43 + use_factor_orthogonalization + orthogonalize_pairs
+# 状态: final（当前最优策略，2026-07-21 锁定）
+# IS Sharpe 0.6269 / 2024 Sharpe 0.1153 / 2025 Sharpe 2.0359 / 2018-2021 Sharpe 0.1669
+# IS显著超越 v43 (IS Sharpe 0.6269 vs 0.5716, +9.7%)，所有年份均改善
+# 动机: v47 PE+PB双估值改善2024但跨周期恶化，假设B/P共线部分是恶化源
 strategy_type: industry_rotation
-strategy_version: v43
-strategy_name: "行业轮动策略 industry_rotation_v43 (pe_adjusted_rrg_vote, superseded)"
-description: "v41+PE调节RRG投票(alpha=0.2) [superseded]"
+strategy_version: v53
+strategy_name: "行业轮动策略 industry_rotation_v53 (factor_orth, final)"
+description: "v43+B/P对E/P正交化(Gram-Schmidt残差化) [final]"
 
 backtest:
   start_date: "2022-01-01"
@@ -52,10 +54,13 @@ selection:
     pe_lookback: 250
     pe_expensive_percentile: 0.10
     pe_min_industries: 3
-    # NEW in v43: PE调节RRG投票
     use_pe_adjusted_rrg_vote: true
     pe_vote_adjust_alpha: 0.2
     use_factors: true
+    # NEW in v53: 因子正交化
+    use_factor_orthogonalization: true
+    orthogonalize_pairs:
+      - ["earnings_to_price_ratio", "book_to_price_ratio"]
     factor_names:
       - Price1M
       - Price3M

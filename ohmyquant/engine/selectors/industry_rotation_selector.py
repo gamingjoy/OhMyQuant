@@ -265,6 +265,14 @@ class IndustryRotationSelector(BaseSelector):
         # 动机：v45-v48参数调整均无法解决因子时变问题，IC加权让因子权重自适应近期表现
         # 实现：w_final = sign(w_static) * |mean(rank_IC)| / sum(|w_final|) 归一化
         # 优势：近期有效因子权重大，失效因子权重小，自动适应市场环境变化
+        # v49失败：IC值过小(0.02-0.05)导致所有因子趋近等权，静态权重信息丢失
+        #
+        # v50: IC乘数模式（保留v49 IC计算逻辑，改进使用方式）
+        # 核心：IC作为静态权重的乘数，保留静态权重结构信息
+        # 实现：w_final = w_static * (1 + scale * norm_ic)
+        #   - norm_ic = |IC| / max(|IC|_all_factors) ∈ [0, 1]
+        #   - scale=0.5时，最强因子权重×1.5，最弱因子权重×1.0（保持静态）
+        # 优势：静态权重结构(raw_beta=-2.0仍是强负权重)不丢失，仅按近期IC幅度调节
         self.use_ic_weighting: bool = ir_cfg.get("use_ic_weighting", False)
         self.ic_lookback: int = ir_cfg.get(
             "ic_lookback", 60
@@ -272,6 +280,41 @@ class IndustryRotationSelector(BaseSelector):
         self.ic_horizon: int = ir_cfg.get(
             "ic_horizon", 5
         )  # 前向收益horizon（约1周）
+        # v50: IC加权模式（"replacement"=v49直接替代, "multiplier"=v50乘数模式）
+        self.ic_weighting_mode: str = ir_cfg.get(
+            "ic_weighting_mode", "replacement"
+        )
+        # v50: IC乘数缩放因子（仅multiplier模式生效）
+        # w_final = w_static * (1 + scale * norm_ic)，scale=0.5表示最强因子×1.5
+        self.ic_weight_scale: float = ir_cfg.get("ic_weight_scale", 0.5)
+        # v51: IC符号确认机制（仅multiplier模式生效）
+        # True: 仅当IC符号与静态权重符号一致时boost，否则保持静态
+        # 动机：2024震荡市IC符号频繁翻转，反向IC会错误boost失效因子
+        # 实现：effective_ic = |IC| if sign(IC)==sign(w_static) else 0
+        #       norm_ic = effective_ic / max(effective_ic_all)
+        self.ic_sign_confirm: bool = ir_cfg.get("ic_sign_confirm", False)
+        # v52: Regime-aware IC（仅multiplier模式生效）
+        # True: 趋势市(market_scale==1.0)启用IC boost，震荡市(market_scale<1.0)禁用IC boost
+        # 动机：v50 IC乘数在2024(震荡市)退化-0.1870，在2022/2023/2025(趋势市)均改善
+        #       震荡市IC信号噪声大，禁用IC boost回到静态权重更稳定
+        # 实现：market_scale<1.0时 norm_ic_map清空，相当于所有因子w_final=w_static
+        self.ic_regime_aware: bool = ir_cfg.get("ic_regime_aware", False)
+        self._current_market_scale: float = 1.0  # 由select()方法更新
+        # v53: 因子正交化（Gram-Schmidt残差化）
+        # 核心：对相关因子对做正交化，提取独立信号
+        # 动机：v47 PE+PB双估值改善2024(+0.1041)但跨周期恶化(-0.2157)
+        #       假设B/P中与E/P共线的部分是恶化源，正交化后B/P独立信号可能更稳定
+        # 实现：对每个(base, target)对，target_orth = target_z - corr * base_z
+        #       然后重新标准化target_orth（std=1）
+        # 配置格式：orthogonalize_pairs: [["earnings_to_price_ratio", "book_to_price_ratio"]]
+        #   - base因子保持原样
+        #   - target因子替换为残差（与base正交的部分）
+        self.use_factor_orthogonalization: bool = ir_cfg.get(
+            "use_factor_orthogonalization", False
+        )
+        self.orthogonalize_pairs: list[list[str]] = ir_cfg.get(
+            "orthogonalize_pairs", []
+        )  # [[base, target], ...]
         self._ic_weights_cache: dict[str, dict[str, float]] | None = None
         self._ic_weights_cache_date: Any = None
         # ML选股（LightGBM预测未来收益）
@@ -713,16 +756,92 @@ class IndustryRotationSelector(BaseSelector):
                 code: float(z) for code, z in zip(codes, zscores)
             }
 
+        # v53: 因子正交化（Gram-Schmidt残差化）
+        # 对每个(base, target)对，target_orth = target_z - corr * base_z
+        # 然后重新标准化target_orth（std=1）
+        if self.use_factor_orthogonalization and self.orthogonalize_pairs:
+            for pair in self.orthogonalize_pairs:
+                if len(pair) != 2:
+                    continue
+                base_f, target_f = pair[0], pair[1]
+                if base_f not in factor_scores or target_f not in factor_scores:
+                    continue
+                base_map = factor_scores[base_f]
+                target_map = factor_scores[target_f]
+                common_codes = set(base_map.keys()) & set(target_map.keys())
+                if len(common_codes) < 10:
+                    continue
+                base_vals = np.array([base_map[c] for c in common_codes])
+                target_vals = np.array([target_map[c] for c in common_codes])
+                # z-score已标准化，corr即回归系数
+                corr = float(np.corrcoef(base_vals, target_vals)[0, 1])
+                if np.isnan(corr):
+                    continue
+                # 残差 = target - corr * base（与base正交）
+                orth_vals = target_vals - corr * base_vals
+                orth_std = float(np.std(orth_vals, ddof=1))
+                if orth_std < 1e-10:
+                    # target完全由base解释，正交化后无信号，保留原值
+                    continue
+                # 重新标准化
+                for c, ov in zip(common_codes, orth_vals):
+                    target_map[c] = float(ov / orth_std)
+                logger.debug(
+                    f"v53 因子正交化: {target_f} ~ {base_f} (corr={corr:.4f}), "
+                    f"{target_f} 替换为残差"
+                )
+
         if not factor_scores:
             return {}
 
-        # v49: IC加权（启用时用滚动rank IC作为权重幅度，保留静态权重方向）
+        # v49/v50: IC加权（启用时用滚动rank IC调节因子权重）
         ic_weights: dict[str, float] = {}
         if self.use_ic_weighting and close is not None:
             ic_weights = self._compute_factor_ic_weights(
                 select_date, stock_codes, close
             )
-
+        # v50/v51/v52: multiplier模式下计算归一化IC（norm_ic ∈ [0, 1]）
+        norm_ic_map: dict[str, float] = {}
+        if (
+            self.use_ic_weighting
+            and self.ic_weighting_mode == "multiplier"
+            and ic_weights
+        ):
+            # v52: regime-aware IC - 震荡市(market_scale<1.0)禁用IC boost
+            if self.ic_regime_aware and self._current_market_scale < 1.0:
+                # 震荡市：norm_ic_map保持空，所有因子w_final=w_static
+                logger.debug(
+                    f"v52 regime-aware IC: 震荡市(market_scale={self._current_market_scale:.2f})，"
+                    f"禁用IC boost"
+                )
+            elif self.ic_sign_confirm:
+                # v51: 仅IC符号与静态权重符号一致时计入effective_ic
+                # 反向IC的因子effective_ic=0，不参与归一化也不boost
+                effective_ic_map: dict[str, float] = {}
+                for fname, ic_val in ic_weights.items():
+                    w_static = self.factor_weights.get(fname, 1.0)
+                    if np.sign(ic_val) == np.sign(w_static):
+                        effective_ic_map[fname] = abs(ic_val)
+                    else:
+                        effective_ic_map[fname] = 0.0
+                max_eff_ic = (
+                    max(effective_ic_map.values()) if effective_ic_map else 0.0
+                )
+                if max_eff_ic > 1e-10:
+                    norm_ic_map = {
+                        k: v / max_eff_ic for k, v in effective_ic_map.items()
+                    }
+            else:
+                # v50: 直接用|IC|归一化
+                max_abs_ic = (
+                    max(abs(v) for v in ic_weights.values())
+                    if ic_weights
+                    else 0.0
+                )
+                if max_abs_ic > 1e-10:
+                    norm_ic_map = {
+                        k: abs(v) / max_abs_ic for k, v in ic_weights.items()
+                    }
         # 加权求和（支持负权重实现反向因子：weight_sum 用 abs(w) 归一化）
         for code in stock_codes:
             total = 0.0
@@ -731,9 +850,20 @@ class IndustryRotationSelector(BaseSelector):
                 if code in code_scores:
                     w_static = self.factor_weights.get(factor_name, 1.0)
                     if self.use_ic_weighting and factor_name in ic_weights:
-                        # v49: w_final = sign(w_static) * |IC|
-                        # IC幅度替代静态幅度，方向保留静态
-                        w = float(np.sign(w_static) * abs(ic_weights[factor_name]))
+                        if self.ic_weighting_mode == "multiplier":
+                            # v50/v51: w_final = w_static * (1 + scale * norm_ic)
+                            # 保留静态权重结构，仅按IC幅度调节
+                            norm_ic = norm_ic_map.get(factor_name, 0.0)
+                            w = float(
+                                w_static
+                                * (1.0 + self.ic_weight_scale * norm_ic)
+                            )
+                        else:
+                            # v49: w_final = sign(w_static) * |IC|
+                            # IC幅度替代静态幅度，方向保留静态
+                            w = float(
+                                np.sign(w_static) * abs(ic_weights[factor_name])
+                            )
                     else:
                         w = w_static
                     total += w * code_scores[code]
@@ -1475,6 +1605,8 @@ class IndustryRotationSelector(BaseSelector):
             if market_scale <= 0.0:
                 logger.debug(f"大盘跌破长期均线，空仓 @ idx={current_idx}")
                 return {}  # 空仓（明确返回空dict，区别于None=数据不足跳过）
+        # v52: 更新当前market_scale供因子评分使用（regime-aware IC）
+        self._current_market_scale = market_scale
 
         # 计算短期/长期动量（基于 close）
         close_cols = [c for c in close.columns if c != "date"]

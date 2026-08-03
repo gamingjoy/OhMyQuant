@@ -17,7 +17,7 @@ from openpyxl import load_workbook
 
 CAPITAL = 10_000_000
 COST_RATE = 0.001
-THS_DIR = Path("output/ths/industry_rotation_v5")
+THS_DIR = Path("output/ths/industry_rotation_v53")
 
 EXPECTED_REBALANCE_DATES = [
     "2026-06-01",  # build

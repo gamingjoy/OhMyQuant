@@ -1,38 +1,39 @@
-"""行业轮动策略 v43（PE分位作为RRG投票权重调节因子）—— [SUPERSEDED]
+"""行业轮动策略 v52（Regime-aware IC：震荡市禁用IC boost）—— [ITER]
 
-状态: superseded（2026-07-21 被 v53 取代）
-IS Sharpe 0.5716 / OOS Sharpe 2.6787 / OOS 收益 +6.66%（vs 沪深300 -3.01%）
-IS显著超越 v41 (IS +31.29% vs +27.61%, Sharpe 0.5716 vs 0.4803)，OOS完全持平
-v53 在IS所有年份全面超越v43 (IS 0.6269 vs 0.5716, +9.7%)
+状态: iter
+baseline: v43 (IS Sharpe 0.5716 / 2024 Sharpe 0.1053 / 2025 Sharpe 2.0319)
 
-v43 = v41 + use_pe_adjusted_rrg_vote: true + pe_vote_adjust_alpha: 0.2
+v52 = v50 + ic_regime_aware: true
+      （v50 = v43 + IC乘数模式 scale=0.5 + lookback=120 + horizon=20）
 
 设计目的：
-  v41 RRG加权投票只考虑动量信号（10/30/60日RS-Mom≥100加权），未考虑估值维度。
-  v15 PE过滤（硬性剔除）在OOS未触发（market_filter+RRG已规避估值泡沫行业）。
-  v43 引入PE调节RRG投票（软性调节），让估值便宜的行业在投票中加分，估值贵的行业减分。
+  v50 IC乘数模式结果分析：
+    - IS 0.5409(-0.03), 2022/2023/2025/2018-2021 全部改善
+    - 2024 退化 -0.1870（关键问题）
 
-  v43 PE调节公式：
-    adjusted_vote = weighted_vote + alpha * (ep_percentile - 0.5)
-    - ep_percentile=1（最便宜）：vote + 0.5*alpha（加分，更易入选）
-    - ep_percentile=0.5（中位）：vote + 0（不变）
-    - ep_percentile=0（最贵）：vote - 0.5*alpha（减分，更难入选）
+  v51 IC符号确认失败：2024更差(-0.1532)，2025也退化(1.9581)
+    - IC符号不一致的因子可能含反转信号，强制过滤反而丢失信息
 
-  alpha=0.2 表示最大±0.1的调节，相对原阈值0.5是20%的调节幅度。
-  与use_pe_filter（硬性剔除）互补：pe_filter是硬性剔除，pe_adjusted_rrg_vote是软性调节。
+  v52 改进思路：直接针对2024震荡市
+    - v50在趋势市(2022/2023/2025)有效，在震荡市(2024)失效
+    - 2024是震荡市（market_scale<1.0），IC信号噪声大
+    - 解法：震荡市禁用IC boost，回到静态权重（相当于v43）
+    - 趋势市保留IC boost，享受v50带来的改善
 
-关键发现：
-  - IS显著改善：总收益+27.61%→+31.29%(+3.68pp)，Sharpe 0.4803→0.5716(+0.0913, +19%)
-  - OOS完全持平：收益+6.66%(持平)，Sharpe 2.6787(持平)
-  - OOS持仓与v41完全相同（PE调节幅度±0.1不足以改变OOS投票结果）
-  - IS改善来自PE调节在IS震荡市投票分歧时改变了行业选择
+  实现：
+    - market_scale==1.0（趋势市）：使用v50 IC乘数 boost
+    - market_scale<1.0（震荡市）：禁用IC boost，w_final=w_static（相当于v43）
+    - 这样2024(震荡市)回到v43水平(0.1053)，其他年份保留v50改善
 
-关键改动：
-  - use_pe_adjusted_rrg_vote: false → true（NEW）
-  - pe_vote_adjust_alpha: 0.2（NEW，PE调节强度）
-  - 其他配置同 v41
+关键改动（vs v50）：
+  - ic_regime_aware: false → true
+  - 其他配置同 v50（不使用ic_sign_confirm）
 
-baseline: v41 (IS Sharpe 0.4803 / OOS Sharpe 2.6787 / OOS +6.66%)
+预期效果：
+  - 2024 回到v43水平（~0.1053，不再退化）
+  - 2022/2023/2025 保留v50改善
+  - 2018-2021 保留v50改善
+  - 若2024回到v43水平且其他年份不退化，v52成为新FINAL
 """
 from __future__ import annotations
 
@@ -40,25 +41,25 @@ from ohmyquant.strategy import register_strategy
 from ohmyquant.strategy.base import BaseStrategy
 
 
-@register_strategy("industry_rotation", "v43")
-class IndustryRotationStrategyV43(BaseStrategy):
-    """行业轮动策略 industry_rotation_v43 (pe_adjusted_rrg_vote, superseded)
+@register_strategy("industry_rotation", "v52")
+class IndustryRotationStrategyV52(BaseStrategy):
+    """行业轮动策略 industry_rotation_v52 (regime_aware_ic, iter)
 
-    状态: superseded（2026-07-21 被 v53 取代）
+    状态: iter（v50基础上引入regime-aware IC，震荡市禁用IC boost）
     """
 
     @classmethod
     def from_version(
         cls, strategy_type: str, version: str, config: dict | None = None
-    ) -> "IndustryRotationStrategyV43":
-        if strategy_type != "industry_rotation" or version != "v43":
+    ) -> "IndustryRotationStrategyV52":
+        if strategy_type != "industry_rotation" or version != "v52":
             raise ValueError(f"不支持的策略版本: {strategy_type} {version}")
 
         base_config = {
             "strategy_type": "industry_rotation",
-            "strategy_version": "v43",
-            "strategy_name": "行业轮动策略 industry_rotation_v43 (pe_adjusted_rrg_vote, superseded)",
-            "description": "v41+PE调节RRG投票(alpha=0.2) [superseded]",
+            "strategy_version": "v52",
+            "strategy_name": "行业轮动策略 industry_rotation_v52 (regime_aware_ic, iter)",
+            "description": "v50+Regime-aware IC(震荡市禁用boost) [iter]",
             "backtest": {
                 "start_date": "2022-01-01",
                 "end_date": "2025-12-31",
@@ -104,10 +105,17 @@ class IndustryRotationStrategyV43(BaseStrategy):
                     "pe_lookback": 250,
                     "pe_expensive_percentile": 0.10,
                     "pe_min_industries": 3,
-                    # NEW in v43: PE调节RRG投票
                     "use_pe_adjusted_rrg_vote": True,
                     "pe_vote_adjust_alpha": 0.2,
                     "use_factors": True,
+                    # v50 base: IC乘数模式
+                    "use_ic_weighting": True,
+                    "ic_weighting_mode": "multiplier",
+                    "ic_weight_scale": 0.5,
+                    "ic_lookback": 120,
+                    "ic_horizon": 20,
+                    # NEW in v52: Regime-aware IC（震荡市禁用boost）
+                    "ic_regime_aware": True,
                     "factor_names": [
                         "Price1M", "Price3M", "ROC20",
                         "DAVOL10", "money_flow_20",

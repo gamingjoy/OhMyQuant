@@ -1,11 +1,11 @@
-# 行业轮动策略 v43 配置（PE分位作为RRG投票权重调节因子）—— [SUPERSEDED]
-# v43 = v41 + use_pe_adjusted_rrg_vote: true + pe_vote_adjust_alpha: 0.2
-# 状态: superseded（2026-07-21 被 v53 取代）
-# baseline: v41 (IS Sharpe 0.4803 / OOS Sharpe 2.6787 / OOS +6.66%)
+# 行业轮动策略 v50 配置（IC乘数模式：保留静态权重结构）—— [ITER]
+# v50 = v43 + use_ic_weighting + ic_weighting_mode="multiplier" + scale=0.5 + lookback=120 + horizon=20
+# baseline: v43 (IS Sharpe 0.5716 / 2024 Sharpe 0.1053 / 2025 Sharpe 2.0319)
+# v49失败教训: IC直接替代静态权重导致信息丢失(IS 0.5716→0.0736)
 strategy_type: industry_rotation
-strategy_version: v43
-strategy_name: "行业轮动策略 industry_rotation_v43 (pe_adjusted_rrg_vote, superseded)"
-description: "v41+PE调节RRG投票(alpha=0.2) [superseded]"
+strategy_version: v50
+strategy_name: "行业轮动策略 industry_rotation_v50 (ic_multiplier, iter)"
+description: "v43+IC乘数(scale=0.5,lookback=120,horizon=20) [iter]"
 
 backtest:
   start_date: "2022-01-01"
@@ -52,10 +52,15 @@ selection:
     pe_lookback: 250
     pe_expensive_percentile: 0.10
     pe_min_industries: 3
-    # NEW in v43: PE调节RRG投票
     use_pe_adjusted_rrg_vote: true
     pe_vote_adjust_alpha: 0.2
     use_factors: true
+    # NEW in v50: IC乘数模式（保留静态权重结构）
+    use_ic_weighting: true
+    ic_weighting_mode: "multiplier"
+    ic_weight_scale: 0.5
+    ic_lookback: 120
+    ic_horizon: 20
     factor_names:
       - Price1M
       - Price3M
