@@ -1,0 +1,124 @@
+# 行业轮动策略 v66 配置（v53 + regime-aware 北向资金因子）—— [FINAL]
+# v66 = v53 + hk_hold_ratio_change_5d + hk_hold_regime_aware
+# 状态: final（IS 0.6677, +6.5% vs v53; OOS与v53相同, 熊市自动禁用北向因子）
+# IS Sharpe 0.6677 / 2023 0.3204 / 2024 0.1925 / 2025 2.0860 / 2018-2021 0.2139
+# 动机: 北向资金是"聪明钱"，5日增仓变化对短期收益有预测力(IC=+0.0234, ICIR=+0.3270)
+#       v64直接使用IS+3.4%但2022熊市恶化-0.24，v66通过regime-aware在熊市禁用北向因子
+# 迭代: v64(w=1.0)→v65(w=0.3)→v66(regime-aware)，三次迭代收敛
+strategy_type: industry_rotation
+strategy_version: v66
+strategy_name: "行业轮动策略 industry_rotation_v66 (hk_hold_ra, final)"
+description: "v53+regime-aware北向因子(熊市禁用) [final]"
+
+backtest:
+  start_date: "2022-01-01"
+  end_date: "2025-12-31"
+  data_start_date: "2018-01-01"
+  transaction_cost: 0.001
+
+selection:
+  method: industry_rotation
+  top_n: 10
+  max_stock_weight: 0.10
+  industry_rotation:
+    data_root: "D:/Work/Project/download_a_share/data"
+    top_industries: 3
+    stocks_per_industry: 3
+    momentum_short: 60
+    momentum_long: 120
+    weight_short: 0.6
+    weight_long: 0.4
+    max_industry_weight: 0.30
+    market_filter: true
+    market_index: "000300.XSHG"
+    market_ma_short: 10
+    market_ma_long: 30
+    industry_risk_filter: true
+    risk_filter_window: 20
+    risk_filter_min_industries: 3
+    absolute_momentum: true
+    absolute_momentum_window: 20
+    absolute_momentum_threshold: -0.03
+    absolute_momentum_scale: 0.5
+    use_inv_vol_weight: false
+    inv_vol_window: 20
+    use_rrg: true
+    rs_ratio_window: 220
+    rs_momentum_window: 30
+    rs_momentum_windows: [10, 30, 60]
+    rs_momentum_vote_threshold: 2
+    rs_momentum_vote_weights: [0.3, 0.4, 0.3]
+    rrg_momentum_threshold: 100.0
+    rrg_min_industries: 3
+    use_pe_filter: true
+    pe_factor: "earnings_to_price_ratio"
+    pe_lookback: 250
+    pe_expensive_percentile: 0.10
+    pe_min_industries: 3
+    use_pe_adjusted_rrg_vote: true
+    pe_vote_adjust_alpha: 0.2
+    use_factors: true
+    use_factor_orthogonalization: true
+    orthogonalize_pairs:
+      - ["earnings_to_price_ratio", "book_to_price_ratio"]
+    # v66: 北向资金因子 + regime-aware
+    use_hk_hold_factor: true
+    hk_hold_change_window: 5
+    hk_hold_regime_aware: true
+    factor_names:
+      - Price1M
+      - Price3M
+      - ROC20
+      - DAVOL10
+      - money_flow_20
+      - gross_income_ratio
+      - roe_ttm
+      - net_profit_ratio
+      - earnings_to_price_ratio
+      - book_to_price_ratio
+      - raw_beta
+      - residual_volatility
+      - hk_hold_ratio_change_5d
+    factor_weights:
+      Price1M: 1.0
+      Price3M: 1.0
+      ROC20: 1.0
+      DAVOL10: 1.0
+      money_flow_20: 1.0
+      gross_income_ratio: 1.0
+      roe_ttm: 1.0
+      net_profit_ratio: 1.0
+      earnings_to_price_ratio: 1.0
+      book_to_price_ratio: 1.0
+      raw_beta: -2.0
+      residual_volatility: -1.5
+      hk_hold_ratio_change_5d: 1.0
+
+portfolio:
+  max_stock_weight: 0.10
+  max_industry_weight: 0.30
+  min_stocks: 5
+
+risk:
+  method: regime_adaptive
+  target_vol: 0.12
+  lookback: 20
+  min_exposure_scale: 0.3
+
+rebalance:
+  frequency: weekly
+  weekday: 0
+  method: cost_benefit
+  cost_model:
+    name: stock_cn
+
+factors:
+  - mom_1m
+
+pools:
+  stocks:
+    index: "000300.XSHG"
+
+data:
+  source: duckdb
+  data_root: "D:/Work/Project/download_a_share/data"

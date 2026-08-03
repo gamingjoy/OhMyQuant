@@ -1,0 +1,79 @@
+# expertForest_v1 多专家树集成学习策略配置 —— [FINAL v3]
+# 策略类型: 量化策略(expertForest), 多专家树集成(Multi-Expert Tree Ensemble)
+# 状态: final v3 (回退32专家, 移除sentiment特征集 - v2过拟合排查结论)
+# 数据: factors_wide(260因子) + stock_daily_wide + stock_hk_hold
+# 回测: Walk Forward滚动训练, 每周调仓, T+1开盘价成交
+# v2失败复盘: sentiment特征集8因子中5个有问题(unlock实现bug全NaN, margin_sec全NaN,
+#   margin_fin IC符号反转, mf因子IC过弱), 16个sentiment专家IS过拟合噪声→OOS退化
+# v2→v3: 移除sentiment特征集, 关闭dead factors, 回退32专家(meTree32)
+strategy_type: expertForest
+strategy_version: v1
+strategy_name: "量化策略 expertForest_v1 (meTree32, final v3)"
+description: "多专家树集成(32专家:RF×ET×LGB×XGB, momentum+fundamental) Walk-Forward周频调仓 [final v3, 移除sentiment]"
+
+backtest:
+  start_date: "2023-01-01"          # IS开始（252日训练窗口后首个预测日）
+  end_date: "2026-05-31"            # IS结束
+  data_start_date: "2021-01-01"     # 训练数据起始（504日窗口需回溯到2021）
+  transaction_cost: 0.0001          # 佣金双向万1
+  slippage: 0.001                   # 单边滑点0.10%
+  trading_days: 242
+
+# 股票池配置
+pools:
+  stocks:
+    index: "000905.XSHG"            # 中证500 (IS迭代最优: Sharpe=1.5043)
+
+# 因子配置（自定义字段，不受StrategyConfig校验）
+factor_config:
+  # 原始因子集（从factors_wide加载，只用覆盖率>80%的）
+  raw_factors: "auto"               # auto=自动筛选覆盖率>80%的因子
+  # 衍生因子（从stock_daily_wide计算）
+  derive_factors: true
+  # 北向资金因子
+  use_hk_hold: true
+  hk_hold_window: 5
+  # 情绪/卖压类因子 - v3关闭(v2排查结论: 整体质量不足)
+  # use_margin: false               # margin_fin IC符号反转(IS-,OOS+), margin_sec全NaN
+  # use_money_flow: false           # mf因子IC过弱(|IC|<0.025), 信号不足
+  # use_unlock: false               # unlock实现bug: shift(-20)在稀疏事件数据上全NaN(dead factor)
+  # 因子预处理
+  winsorize_quantile: 0.01          # 截尾到[1%, 99%]分位
+  zscore_standardize: true
+
+# 专家模型配置
+expert:
+  model_types: ["rf", "et", "lgb", "xgb"]
+  hyper_sets: ["conservative", "moderate"]   # 去掉aggressive(深树过拟合)
+  feature_sets: ["momentum", "fundamental"]  # v3: 移除sentiment(过拟合源)
+  train_windows: [252, 504]           # 训练窗口（交易日）- 1年+2年双窗口差异化
+  # 总计: 4 × 2 × 2 × 2 = 32个专家
+  n_jobs: 32                          # loky并行数(32核CPU全部利用, 绕过GIL真并行)
+
+# Walk Forward配置
+walk_forward:
+  rebalance_freq: "weekly"          # 每周调仓
+  rebalance_weekday: 0              # 周一调仓
+  prediction_horizon: 5             # 预测5日前向收益
+  label_type: "excess_return"       # 超额收益(相对基准)
+  benchmark: "000300.XSHG"          # 基准指数
+  purge_gap: 5                      # 训练集尾部排除5天(防标签泄露)
+
+# 集成配置
+ensemble:
+  method: "rank_average"            # Rank平均集成 (抗过拟合最优, 无IC加权泄漏)
+
+# 选股配置
+selection:
+  top_n: 30                         # Top-30 (IS迭代最优)
+  weighting: "equal"
+
+# 风控配置
+risk:
+  max_position: 1.0                 # 最大仓位
+  min_position: 0.0                 # 最小仓位(空仓)
+  stop_loss: null                   # 无止损(ML模型自适应)
+
+data:
+  source: duckdb
+  data_root: "D:/Work/Project/download_a_share/data"

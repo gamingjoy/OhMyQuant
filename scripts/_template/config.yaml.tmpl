@@ -1,0 +1,44 @@
+# {strategy_name} v{version} 配置模板
+#
+# 复制此文件到 ohmyquant/strategy/strategies/{strategy_name}/v{version}/config.yaml
+# 并根据策略需求修改
+
+strategy:
+  type: "{strategy_name}"
+  version: "v{version}"
+
+backtest:
+  start_date: "2022-01-01"
+  end_date: "2025-12-31"
+  benchmark: "000300.XSHG"  # 沪深300
+  initial_capital: 10000000
+
+selection:
+  pool: "000300.XSHG"  # 股票池
+  top_n: 10             # 选股数量
+  # 选股逻辑配置...
+
+factors:
+  # 因子列表
+  - name: "momentum_20d"
+    weight: 1.0
+  - name: "roe_ttm"
+    weight: 1.0
+
+risk:
+  # 风控配置
+  max_drawdown: 0.15
+  regime_adaptive: true
+
+allocation:
+  # 配置权重分配
+  method: "equal_weight"  # equal_weight / risk_parity
+
+rebalance:
+  frequency: "weekly"  # weekly / biweekly / monthly
+  weekday: 0           # 0=周一
+
+execution:
+  cost_model: "stock_cn"
+  cost_rate: 0.001
+  lot_size: 100

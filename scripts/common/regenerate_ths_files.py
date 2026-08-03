@@ -15,8 +15,6 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-# 跨目录引用 industry_rotation 脚本(策略专属逻辑)
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "industry_rotation"))
 
 # THS 通用工具从框架层引用
 from ohmyquant.execution.ths_utils import (
@@ -25,8 +23,8 @@ from ohmyquant.execution.ths_utils import (
     replay_history,
     write_xlsx,
 )
-# run_oos_backtest 仍从 daily 脚本引用(策略专属逻辑)
-from industry_rotation_daily import run_oos_backtest
+# run_oos_backtest 从框架层引用(已解耦)
+from ohmyquant.strategy.runner import run_oos_backtest
 from ohmyquant.data.sources.duckdb_source import DuckDBSource
 
 DATA_ROOT = "D:/Work/Project/download_a_share/data"
@@ -48,7 +46,7 @@ def main():
     # 动态获取最新数据日期作为回测终止日
     oos_end = source.get_latest_date()
     print(f"运行 OOS 回测: {version} → {oos_end}")
-    result = run_oos_backtest(oos_end, version=version)
+    result = run_oos_backtest("industry_rotation", version, "2026-06-01", oos_end)
     rebalance_log = result["rebalance_log"]
 
     print(f"\n调仓日数量: {len(rebalance_log)}")

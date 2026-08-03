@@ -86,6 +86,9 @@ class IndustryRotationSelector(BaseSelector):
         self.market_index: str = ir_cfg.get("market_index", "000300.XSHG")
         self.market_ma_short: int = ir_cfg.get("market_ma_short", 20)
         self.market_ma_long: int = ir_cfg.get("market_ma_long", 60)
+        # 选股层二值化（v62+）：market_scale 只返回 0.0（空仓）或 1.0（不空仓）
+        # 仓位幅度交给风控层统一管理，避免选股层与风控层双重减仓
+        self.market_filter_binary: bool = ir_cfg.get("market_filter_binary", False)
         # 绝对动量（Dual Momentum）：近期收益为负时降仓，参考 Antonacci 双动量
         self.absolute_momentum: bool = ir_cfg.get("absolute_momentum", False)
         self.absolute_momentum_window: int = ir_cfg.get(
@@ -315,6 +318,13 @@ class IndustryRotationSelector(BaseSelector):
         self.orthogonalize_pairs: list[list[str]] = ir_cfg.get(
             "orthogonalize_pairs", []
         )  # [[base, target], ...]
+        # v64: 北向资金因子（从stock_hk_hold表加载，IC=+0.0234, ICIR=+0.3270, 5日horizon）
+        # 因子：hk_hold_ratio_change_5d = share_ratio(t) - share_ratio(t-5)
+        # 动机：北向资金是A股"聪明钱"，5日增仓变化对短期收益有预测力
+        self.use_hk_hold_factor: bool = ir_cfg.get("use_hk_hold_factor", False)
+        self.hk_hold_change_window: int = ir_cfg.get("hk_hold_change_window", 5)
+        # v66: 北向因子regime-aware（熊市market_scale<1.0时禁用，避免熊市噪声）
+        self.hk_hold_regime_aware: bool = ir_cfg.get("hk_hold_regime_aware", False)
         self._ic_weights_cache: dict[str, dict[str, float]] | None = None
         self._ic_weights_cache_date: Any = None
         # ML选股（LightGBM预测未来收益）
@@ -540,12 +550,50 @@ class IndustryRotationSelector(BaseSelector):
             )
             df = source.load_factor_wide(factor_names=all_factors)
             if df is not None and len(df) > 0:
+                # v64: 合并北向资金因子
+                if self.use_hk_hold_factor:
+                    hk_factor_name = f"hk_hold_ratio_change_{self.hk_hold_change_window}d"
+                    try:
+                        hk_df = source.con.execute(f"""
+                            SELECT date, code, share_ratio
+                            FROM stock_hk_hold
+                            ORDER BY code, date
+                        """).pl()
+                        if len(hk_df) > 0:
+                            # 统一date类型为DATE，统一code为denormalized格式（与load_factor_wide对齐）
+                            hk_df = hk_df.with_columns(
+                                pl.col("date").cast(pl.Date),
+                                pl.col("code").map_elements(source.denormalize_code, return_dtype=pl.Utf8),
+                            )
+                            df = df.with_columns(pl.col("date").cast(pl.Date))
+                            # 每只股票每日取所有link_id的share_ratio之和
+                            hk_df = hk_df.group_by(["date", "code"]).agg(
+                                pl.col("share_ratio").sum().alias("hk_hold_ratio")
+                            )
+                            hk_df = hk_df.sort(["code", "date"])
+                            # 计算N日变化
+                            w = self.hk_hold_change_window
+                            hk_df = hk_df.with_columns(
+                                (pl.col("hk_hold_ratio") - pl.col("hk_hold_ratio").shift(w).over("code")).alias(hk_factor_name)
+                            )
+                            hk_df = hk_df.select(["date", "code", hk_factor_name])
+                            # 合并到因子数据
+                            before_rows = len(df)
+                            df = df.join(hk_df, on=["date", "code"], how="left")
+                            non_null = df.select(pl.col(hk_factor_name).is_not_null().sum()).item()
+                            logger.info(f"北向资金因子合并: {hk_factor_name}, {len(hk_df)} 行, "
+                                       f"join后{len(df)}行, 非空{non_null}行")
+                    except Exception as e:
+                        logger.warning(f"北向资金因子加载失败: {e}")
+
                 self._factor_data = df.sort("date")
+                n_extra_hk = 1 if self.use_hk_hold_factor else 0
                 logger.info(
-                    f"因子数据加载: {len(df)} 行, {len(all_factors)} 个因子 "
+                    f"因子数据加载: {len(df)} 行, {len(all_factors) + n_extra_hk} 个因子 "
                     f"(选股{len(self.factor_names)}+拥挤度{len(self.crowding_factors) if (self.use_crowding_filter or self.use_crowding_reversal) else 0}"
                     f"+估值{1 if self.use_pe_filter or self.use_pe_adjusted_rrg_vote else 0}"
-                    f"+反转{1 if self.use_crowding_reversal_factor else 0})"
+                    f"+反转{1 if self.use_crowding_reversal_factor else 0}"
+                    f"+北向{n_extra_hk})"
                 )
         except Exception as e:
             logger.warning(f"因子数据加载失败: {e}")
@@ -843,10 +891,17 @@ class IndustryRotationSelector(BaseSelector):
                         k: abs(v) / max_abs_ic for k, v in ic_weights.items()
                     }
         # 加权求和（支持负权重实现反向因子：weight_sum 用 abs(w) 归一化）
+        # v66: regime-aware hk_hold（熊市禁用北向因子）
+        skip_hk_hold = (
+            self.hk_hold_regime_aware
+            and self._current_market_scale < 1.0
+        )
         for code in stock_codes:
             total = 0.0
             weight_sum = 0.0
             for factor_name, code_scores in factor_scores.items():
+                if skip_hk_hold and factor_name.startswith("hk_hold_ratio_change"):
+                    continue
                 if code in code_scores:
                     w_static = self.factor_weights.get(factor_name, 1.0)
                     if self.use_ic_weighting and factor_name in ic_weights:
@@ -986,30 +1041,54 @@ class IndustryRotationSelector(BaseSelector):
         ma_short = float(np.mean(prices[-self.market_ma_short:]))
         ma_long = float(np.mean(prices[-self.market_ma_long:]))
 
-        if current_price < ma_long:
-            ma_scale = 0.0  # 跌破长期均线，空仓
-        elif current_price < ma_short:
-            ma_scale = 0.5  # 跌破短期均线，降仓50%
-        else:
-            ma_scale = 1.0
+        if self.market_filter_binary:
+            # 二值模式（v62+）：只决定是否空仓，仓位幅度交风控层
+            if current_price < ma_long:
+                ma_scale = 0.0  # 跌破长期均线，空仓
+            else:
+                ma_scale = 1.0  # 不空仓，仓位幅度由风控层决定
 
-        # 绝对动量叠加（Dual Momentum）：近期收益为负时进一步降仓
-        # 参考 Antonacci 双动量：绝对动量提供趋势过滤，在下跌趋势中主动避险
-        if (
-            self.absolute_momentum
-            and ma_scale > 0
-            and len(prices) >= self.absolute_momentum_window + 1
-        ):
-            abs_ret = (
-                prices[-1] / prices[-self.absolute_momentum_window - 1] - 1
-            )
-            if abs_ret < self.absolute_momentum_threshold:
-                ma_scale *= self.absolute_momentum_scale
-                logger.debug(
-                    f"绝对动量降仓: {self.absolute_momentum_window}日收益="
-                    f"{abs_ret:.2%} < {self.absolute_momentum_threshold}, "
-                    f"仓位×{self.absolute_momentum_scale}"
+            # 绝对动量作为空仓信号（而非降仓）
+            if (
+                self.absolute_momentum
+                and ma_scale > 0
+                and len(prices) >= self.absolute_momentum_window + 1
+            ):
+                abs_ret = (
+                    prices[-1] / prices[-self.absolute_momentum_window - 1] - 1
                 )
+                if abs_ret < self.absolute_momentum_threshold:
+                    ma_scale = 0.0
+                    logger.debug(
+                        f"绝对动量空仓: {self.absolute_momentum_window}日收益="
+                        f"{abs_ret:.2%} < {self.absolute_momentum_threshold}"
+                    )
+        else:
+            # 原三档逻辑（向后兼容）
+            if current_price < ma_long:
+                ma_scale = 0.0  # 跌破长期均线，空仓
+            elif current_price < ma_short:
+                ma_scale = 0.5  # 跌破短期均线，降仓50%
+            else:
+                ma_scale = 1.0
+
+            # 绝对动量叠加（Dual Momentum）：近期收益为负时进一步降仓
+            # 参考 Antonacci 双动量：绝对动量提供趋势过滤，在下跌趋势中主动避险
+            if (
+                self.absolute_momentum
+                and ma_scale > 0
+                and len(prices) >= self.absolute_momentum_window + 1
+            ):
+                abs_ret = (
+                    prices[-1] / prices[-self.absolute_momentum_window - 1] - 1
+                )
+                if abs_ret < self.absolute_momentum_threshold:
+                    ma_scale *= self.absolute_momentum_scale
+                    logger.debug(
+                        f"绝对动量降仓: {self.absolute_momentum_window}日收益="
+                        f"{abs_ret:.2%} < {self.absolute_momentum_threshold}, "
+                        f"仓位×{self.absolute_momentum_scale}"
+                    )
 
         return ma_scale
 

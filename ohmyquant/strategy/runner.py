@@ -219,4 +219,92 @@ def run(strategy_type: str, version: str, **kwargs) -> StrategyResult:
     return StrategyRunner.run_strategy(strategy_type, version, kwargs)
 
 
-__all__ = ["StrategyRunner", "StrategyResult", "run"]
+def run_oos_backtest(
+    strategy_type: str,
+    version: str,
+    start_date: str,
+    end_date: str,
+    **kwargs,
+) -> dict:
+    """运行 OOS 回测并提取调仓日志和绩效指标
+
+    通用函数,不绑定特定策略。用于日常调仓脚本和批量重新生成 THS 文件。
+
+    Args:
+        strategy_type: 策略类型 (如 "industry_rotation", "expertForest")
+        version: 策略版本 (如 "v66", "v1")
+        start_date: OOS 起始日期 (YYYY-MM-DD)
+        end_date: OOS 结束日期 (YYYY-MM-DD)
+        **kwargs: 额外配置覆盖参数
+
+    Returns:
+        dict: {
+            "final_nav": float,
+            "total_return": float,
+            "sharpe": float,
+            "max_drawdown": float,
+            "rebalance_log": [{"date": str, "holdings": {code: weight}}],
+        }
+    """
+    import numpy as np
+
+    logger.info(f"运行OOS回测: {start_date} → {end_date} ({strategy_type} {version})")
+
+    config_override = {
+        "backtest": {
+            "start_date": start_date,
+            "end_date": end_date,
+        },
+        **kwargs,
+    }
+    strategy = StrategyRegistry.create(strategy_type, version, config_override)
+    runner = StrategyRunner(strategy.config)
+    result = runner.run()
+
+    bt = result.backtest_result
+    nav = bt.nav
+    daily_returns = bt.daily_returns
+
+    n_days = len(nav)
+    final_nav = float(nav[-1]) if n_days > 0 else 1.0
+    total_return = final_nav - 1.0
+
+    rets = daily_returns.to_numpy()
+    rets = rets[~np.isnan(rets)]
+    sharpe = (
+        float(np.mean(rets) / np.std(rets, ddof=1) * np.sqrt(242))
+        if len(rets) > 1 and np.std(rets, ddof=1) > 0
+        else 0.0
+    )
+
+    nav_arr = nav.to_numpy()
+    peak = np.maximum.accumulate(nav_arr)
+    drawdown = (nav_arr - peak) / peak
+    max_drawdown = float(np.min(drawdown))
+
+    logger.info(
+        f"  净值: {final_nav:.4f}  收益: {total_return:+.2%}  "
+        f"Sharpe: {sharpe:.4f}  最大回撤: {max_drawdown:.2%}"
+    )
+
+    # 获取调仓历史
+    stock_weights = bt.stock_weights_by_date
+    rebalance_log = []
+    for entry in bt.pool_weight_log:
+        date_str = str(entry.get("date", ""))
+        holdings = stock_weights.get(date_str, {})
+        rebalance_log.append({
+            "date": date_str,
+            "holdings": {k: round(v, 4) for k, v in holdings.items()},
+        })
+
+    return {
+        "final_nav": final_nav,
+        "total_return": total_return,
+        "sharpe": sharpe,
+        "max_drawdown": max_drawdown,
+        "rebalance_log": rebalance_log,
+    }
+
+
+__all__ = ["StrategyRunner", "StrategyResult", "run", "run_oos_backtest"]
