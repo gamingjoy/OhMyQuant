@@ -495,9 +495,6 @@ python -m pytest tests/ --cov=ohmyquant --cov-report=html
 ### 批量分析与验证
 
 ```bash
-# 数据增量更新（当年 + 前一年）
-python scripts/common/update_data.py
-
 # 行业轮动 T 日早晨调仓检查 + 生成同花顺交易文件
 python scripts/industry_rotation/industry_rotation_daily.py
 

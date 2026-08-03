@@ -5,10 +5,9 @@
 """
 from .csv_source import CSVSource
 from .duckdb_source import DuckDBSource
-from .jqdata_source import JQDataSource
 from .local_parquet_source import LocalParquetSource
 from ...core.discovery import discover_modules
 
 discover_modules(__name__)
 
-__all__ = ["CSVSource", "DuckDBSource", "JQDataSource", "LocalParquetSource"]
+__all__ = ["CSVSource", "DuckDBSource", "LocalParquetSource"]

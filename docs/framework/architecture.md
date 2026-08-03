@@ -34,7 +34,6 @@ CLI (cli/)
         └── Data (data/)                          ← 数据层
               ├── DataCatalog (base.py)           ← 统一数据访问
               ├── DuckDBSource (sources/duckdb_source.py)  ← 26 视图
-              ├── JQDataSource (sources/jqdata_source.py)  ← 聚宽接口
               ├── CSVSource / LocalParquetSource
               └── Calendar (calendar.py) / Universe (universe.py)
 ```

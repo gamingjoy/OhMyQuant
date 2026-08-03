@@ -93,7 +93,7 @@ class DuckDBSource(DataSource):
             "etf_share": "parquet/etf_share/**/*.parquet",
             "etf_margin_trading": "parquet/etf_margin_trading/**/*.parquet",
             "etf_portfolio_stock": "parquet/etf_portfolio_stock/**/*.parquet",
-            # 概念分类 + 聚宽原始因子库
+            # 概念分类 + 外部因子库
             "stock_concept": "parquet/stock_concept/**/*.parquet",
             "factors": "parquet/factors/**/*.parquet",
         }

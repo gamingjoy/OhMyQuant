@@ -339,14 +339,13 @@ python scripts/industry_rotation/industry_rotation_nav_analysis.py --version v66
 
 ### 7.3 日常调仓流程
 
-1. **T-1 日**: 运行 `update_data.py` 增量更新数据 (当年 + 前一年)
-2. **T 日早晨**: 运行 `industry_rotation_daily.py`:
+1. **T 日早晨**: 运行 `industry_rotation_daily.py`:
    - 检查最新数据日
    - 判断是否为调仓日 (每周一)
    - 回放历史调仓重建持仓状态
    - 运行 OOS 回测获取最新调仓信号
    - 生成同花顺交易流水 xlsx
-3. **T 日开盘**: 将 xlsx 导入同花顺 PMS 执行交易
+2. **T 日开盘**: 将 xlsx 导入同花顺 PMS 执行交易
 
 ---
 

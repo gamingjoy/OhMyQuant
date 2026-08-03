@@ -116,7 +116,7 @@ class PortfolioConfig(BaseModel):
 class DataConfig(BaseModel):
     """数据源参数"""
 
-    source: str = "duckdb"  # duckdb / local_parquet / jqdata
+    source: str = "duckdb"  # duckdb / local_parquet
     data_root: str = os.getenv("DATA_ROOT", "data")
     cache_dir: str | None = None
 

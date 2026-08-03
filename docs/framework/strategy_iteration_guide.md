@@ -151,7 +151,7 @@ factors:
 
 参考 [factor_development.md](file:///d:/Work/Project/OhMyQuant/docs/factor_development.md)。在 [factors/builtin/](file:///d:/Work/Project/OhMyQuant/ohmyquant/factors/builtin/) 下新建 `.py` 文件，用 `@register_factor` 注册。
 
-> industry_rotation 策略在 `selection.industry_rotation.factor_names` 中直接使用聚宽预计算的因子，不需要此步骤。
+> industry_rotation 策略在 `selection.industry_rotation.factor_names` 中直接使用外部数据源预计算的因子，不需要此步骤。
 
 ---
 

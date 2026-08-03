@@ -1,7 +1,7 @@
 """数据抽象层核心接口
 
 定义 DataSource ABC 和 DataCatalog 统一访问入口。
-所有数据源（聚宽/本地Parquet/DuckDB/CSV）实现 DataSource 接口，
+所有数据源（本地Parquet/DuckDB/CSV）实现 DataSource 接口，
 上层引擎只依赖此接口，不关心数据来源。
 """
 from __future__ import annotations
@@ -187,11 +187,11 @@ class DataSource(ABC):
 
     @staticmethod
     def normalize_code(code: str) -> str:
-        """标准化代码为聚宽格式
+        """标准化代码为标准格式
 
         "000001.SZ" → "000001.XSHE"
         "600000.SH" → "600000.XSHG"
-        已是聚宽格式则不变
+        已是标准格式则不变
         """
         if "." not in code:
             return code
@@ -205,7 +205,7 @@ class DataSource(ABC):
 
     @staticmethod
     def denormalize_code(code: str) -> str:
-        """聚宽代码转回常规格式
+        """标准代码转回常规格式
 
         "000001.XSHE" → "000001.SZ"
         "600000.XSHG" → "600000.SH"

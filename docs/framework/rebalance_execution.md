@@ -172,41 +172,18 @@ result = executor.execute_trades(trades, "2024-01-15", old_weights)
 用户实际操作流程（参考用户偏好）：
 
 ```
-T 日早晨：
-  1. 运行 python scripts/update_data.py
-     → 下载 T-1 数据（当年全量 + 前一年）
-     → 数据写入 D:/Work/Project/download_a_share/data/
-
 T 日交易时段：
-  2. 买入场外基金（按 T 日收盘价结算）
+  1. 买入场外基金（按 T 日收盘价结算）
      → 无法获取盘中数据
 
 T 日收盘后：
-  3. 运行 omq run industry_rotation v5
+  2. 运行 omq run industry_rotation v5
      → 回测验证策略效果
      → 结果保存到 output/results.json
 
-  4. （可选）omq compare output/v1.json output/v2.json --report output/report.html
+  3. （可选）omq compare output/v1.json output/v2.json --report output/report.html
      → 对比策略效果
 ```
-
-### 数据更新脚本
-
-```bash
-# 增量更新（T-1 数据 + 当年全量 + 前一年）
-python scripts/update_data.py
-
-# 预览不下载
-python scripts/update_data.py --dry-run
-```
-
-凭据从环境变量读取：
-```bash
-$env:JQ_USERNAME="your_username"
-$env:JQ_PASSWORD="your_password"
-```
-
-> **注意**：不抑制 jqdata warning（用户偏好），warning 有助于发现数据质量问题。
 
 ---
 

@@ -44,7 +44,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "data_dir": "./data",
         "cache_dir": "./cache",
         "update_frequency": "daily",
-        "sources": ["jqdata", "local_parquet"],
+        "sources": ["local_parquet"],
     },
     "strategy": {
         "default_strategy": "industry_rotation",

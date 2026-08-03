@@ -8,7 +8,6 @@
 ```
 scripts/
 ├── common/                 # 通用工具(跨策略复用)
-│   ├── update_data.py
 │   ├── regenerate_ths_files.py
 │   └── verify_ths_trades.py
 ├── industry_rotation/      # 行业轮动策略
@@ -43,7 +42,6 @@ scripts/
 |------|----------|------|
 | 批量生成 THS | `regenerate_ths_files.py` | 批量重新生成全部 OOS THS 文件 |
 | 验证 THS | `verify_ths_trades.py` | 验证 THS xlsx 一致性 |
-| 数据更新 | `update_data.py` | 增量数据更新(T-1数据 + 当年全量 + 前一年) |
 
 ## 当前脚本清单
 
@@ -51,7 +49,6 @@ scripts/
 
 | 脚本 | 用途 |
 |------|------|
-| [update_data.py](common/update_data.py) | 增量数据更新(T-1数据 + 当年全量 + 前一年) |
 | [regenerate_ths_files.py](common/regenerate_ths_files.py) | 批量重新生成全部 OOS THS 文件(复用 industry_rotation_daily 的 run_oos_backtest) |
 | [verify_ths_trades.py](common/verify_ths_trades.py) | 验证 THS xlsx 一致性 |
 

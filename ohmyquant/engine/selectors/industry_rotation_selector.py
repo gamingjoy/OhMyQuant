@@ -58,7 +58,7 @@ class IndustryRotationSelector(BaseSelector):
       3. 选 Top-N 行业
       4. 每个选中行业内选 Top-M 只股票:
          - use_factors=false: 按个股动量排序
-         - use_factors=true: 按多因子复合评分排序（聚宽260因子）
+         - use_factors=true: 按多因子复合评分排序（预计算260因子）
       5. 等权配置，应用个股权重上限
       6. (可选)大盘趋势过滤：跌破短期均线降仓50%，跌破长期均线空仓
     """
@@ -142,7 +142,7 @@ class IndustryRotationSelector(BaseSelector):
         # residual_return_N = stock_return_N - raw_beta * market_return_N
         # 研报参考：华泰金工《残差动量行业轮动》年化超额12.90%
         # 优点：剔除市场Beta后，更能反映股票/行业自身的强势，避免高Beta股虚假动量
-        # 实现要点：用聚宽预计算的 raw_beta 因子做正交化
+        # 实现要点：用预计算的 raw_beta 因子做正交化
         self.use_residual_momentum: bool = ir_cfg.get("use_residual_momentum", False)
         self.residual_beta_factor: str = ir_cfg.get(
             "residual_beta_factor", "raw_beta"
@@ -503,7 +503,7 @@ class IndustryRotationSelector(BaseSelector):
         return self._rrg_table
 
     def _load_factor_data(self) -> pl.DataFrame | None:
-        """惰性加载聚宽因子宽表数据"""
+        """惰性加载预计算因子宽表数据"""
         if self._factor_data is not None:
             return self._factor_data
         # use_factors 或 use_ml 任一启用时都需要加载因子数据
@@ -1218,7 +1218,7 @@ class IndustryRotationSelector(BaseSelector):
     ) -> dict[str, int]:
         """计算行业拥挤度得分（华泰金工3指标简化版）
 
-        拥挤度指标（聚宽因子）：
+        拥挤度指标（预计算因子）：
         - VOL20: 20日成交量
         - turnover_volatility: 换手率波动率
         - Skewness20: 20日偏度
