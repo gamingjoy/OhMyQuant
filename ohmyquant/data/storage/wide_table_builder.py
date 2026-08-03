@@ -13,6 +13,7 @@ from pathlib import Path
 import polars as pl
 
 from ...core.logging import get_logger
+import os
 
 logger = get_logger(__name__)
 
@@ -23,7 +24,7 @@ class WideTableBuilder:
     将多个原始 Parquet 表 JOIN 为一张宽表，按年份分区存储。
 
     用法:
-        builder = WideTableBuilder("D:/Work/Project/download_a_share/data")
+        builder = WideTableBuilder(os.getenv("DATA_ROOT", "data"))
         builder.build_stock_wide_table(rebuild_all_years=False)
     """
 

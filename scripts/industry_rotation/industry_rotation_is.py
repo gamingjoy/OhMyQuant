@@ -16,6 +16,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from ohmyquant.strategy import StrategyRegistry, StrategyRunner
+import os
 
 
 def run_version(version: str) -> dict:
@@ -89,7 +90,7 @@ def run_version(version: str) -> dict:
                 from ohmyquant.data.sources.duckdb_source import DuckDBSource
 
                 source = DuckDBSource(
-                    {"data_root": "D:/Work/Project/download_a_share/data"}
+                    {"data_root": os.getenv("DATA_ROOT", "data")}
                 )
                 industry_map = source.load_industry_map()
                 industry_weights: dict[str, float] = {}

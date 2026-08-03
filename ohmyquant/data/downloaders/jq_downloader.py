@@ -12,6 +12,7 @@ from typing import Any
 import polars as pl
 
 from ...core.logging import get_logger
+import os
 
 logger = get_logger(__name__)
 
@@ -47,7 +48,7 @@ class JQDownloader:
         from ohmyquant.data.downloaders.jq_downloader import JQDownloader
 
         source = JQDataSource({"username": "...", "password": "..."})
-        downloader = JQDownloader(source, "D:/Work/Project/download_a_share/data")
+        downloader = JQDownloader(source, os.getenv("DATA_ROOT", "data"))
         downloader.download_incremental("2024-12-01", "2024-12-31")
     """
 

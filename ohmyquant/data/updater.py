@@ -23,6 +23,7 @@ from typing import Any
 import polars as pl
 
 from ..core.logging import get_logger
+import os
 
 logger = get_logger(__name__)
 
@@ -31,13 +32,13 @@ class DataUpdater:
     """数据更新工作流
 
     用法:
-        updater = DataUpdater(data_root="D:/Work/Project/download_a_share/data")
+        updater = DataUpdater(data_root=os.getenv("DATA_ROOT", "data"))
         updater.run_daily_update()
     """
 
     def __init__(
         self,
-        data_root: str | Path = "D:/Work/Project/download_a_share/data",
+        data_root: str | Path = os.getenv("DATA_ROOT", "data"),
         jq_config: dict | None = None,
     ):
         self.data_root = Path(data_root)

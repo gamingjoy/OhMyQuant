@@ -29,6 +29,7 @@ from scipy.stats import spearmanr
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from ohmyquant.strategy import StrategyRegistry
+import os
 
 
 def main():
@@ -119,7 +120,7 @@ def main():
     from ohmyquant.strategy.strategies.expertForest.v1.factor_engine import FactorEngine
 
     cfg = strategy.config.model_dump() if hasattr(strategy.config, "model_dump") else strategy.config
-    data_root = cfg.get("data", {}).get("data_root", "D:/Work/Project/download_a_share/data")
+    data_root = cfg.get("data", {}).get("data_root", os.getenv("DATA_ROOT", "data"))
     source = DuckDBSource({"data_root": data_root})
     fe = FactorEngine(source, cfg)
 

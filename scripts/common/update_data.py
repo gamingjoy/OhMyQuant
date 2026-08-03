@@ -39,8 +39,8 @@ def main():
     )
     parser.add_argument(
         "--data-root",
-        default="D:/Work/Project/download_a_share/data",
-        help="数据根目录（默认: D:/Work/Project/download_a_share/data）",
+        default=os.getenv("DATA_ROOT", "data"),
+        help="数据根目录（默认: data，可通过环境变量 DATA_ROOT 覆盖）",
     )
     parser.add_argument(
         "--dry-run",

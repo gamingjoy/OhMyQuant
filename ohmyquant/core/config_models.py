@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import Any
 
 from pydantic import BaseModel, Field, model_validator
+import os
 
 
 class BacktestConfig(BaseModel):
@@ -116,7 +117,7 @@ class DataConfig(BaseModel):
     """数据源参数"""
 
     source: str = "duckdb"  # duckdb / local_parquet / jqdata
-    data_root: str = "D:/Work/Project/download_a_share/data"
+    data_root: str = os.getenv("DATA_ROOT", "data")
     cache_dir: str | None = None
 
     model_config = {"extra": "allow"}

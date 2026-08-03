@@ -25,6 +25,7 @@ from ...core.logging import get_logger
 from ...core.plugin_system import PluginType, register_data_source
 from ...core.types import Code, DateLike
 from ..base import DataSource
+import os
 
 logger = get_logger(__name__)
 
@@ -37,13 +38,13 @@ class DuckDBSource(DataSource):
     兼容 download_a_share 的数据目录。
 
     用法:
-        source = DuckDBSource({"data_root": "D:/Work/Project/download_a_share/data"})
+        source = DuckDBSource({"data_root": os.getenv("DATA_ROOT", "data")})
         df = source.load_daily_price(["000001.SZ"], "2024-01-01", "2024-12-31")
     """
 
     def __init__(self, config: dict | None = None):
         cfg = config or {}
-        self.data_root = Path(cfg.get("data_root", "D:/Work/Project/download_a_share/data"))
+        self.data_root = Path(cfg.get("data_root", os.getenv("DATA_ROOT", "data")))
         self._con: Any = None  # duckdb connection (lazy init)
 
     @property

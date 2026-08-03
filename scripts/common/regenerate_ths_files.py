@@ -26,8 +26,9 @@ from ohmyquant.execution.ths_utils import (
 # run_oos_backtest 从框架层引用(已解耦)
 from ohmyquant.strategy.runner import run_oos_backtest
 from ohmyquant.data.sources.duckdb_source import DuckDBSource
+import os
 
-DATA_ROOT = "D:/Work/Project/download_a_share/data"
+DATA_ROOT = os.getenv("DATA_ROOT", "data")
 
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)

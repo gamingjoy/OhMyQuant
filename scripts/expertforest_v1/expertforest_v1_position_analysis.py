@@ -37,9 +37,10 @@ from ohmyquant.execution.ths_utils import (
     write_xlsx,
 )
 from ohmyquant.strategy import StrategyRegistry
+import os
 
 STRATEGY_NAME = "expertforest_v1"
-DATA_ROOT = "D:/Work/Project/download_a_share/data"
+DATA_ROOT = os.getenv("DATA_ROOT", "data")
 OOS_START = "2026-06-01"
 DATA_START = "2024-01-01"  # 504日窗口需回溯到2024
 OUTPUT_DIR = Path(f"output/ths/{STRATEGY_NAME}")

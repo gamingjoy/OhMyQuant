@@ -50,6 +50,9 @@ results/
 *.svg
 !docs/**/*.png
 
+# Archive (历史归档,不推送到 GitHub)
+archive/
+
 # Tracking / experiment artifacts
 runs/
 mlruns/
@@ -59,6 +62,7 @@ experiments/
 # Secrets / credentials
 .env
 .env.*
+!.env.example
 credentials.json
 *.pem
 *.key

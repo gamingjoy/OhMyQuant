@@ -18,6 +18,7 @@ import polars as pl
 from typing import Any
 
 from ohmyquant.core.logging import get_logger
+import os
 
 logger = get_logger(__name__)
 
@@ -32,7 +33,7 @@ class FactorEngine:
             config: 策略配置字典
         """
         self.source = source
-        self.data_root = config.get("data", {}).get("data_root", "D:/Work/Project/download_a_share/data")
+        self.data_root = config.get("data", {}).get("data_root", os.getenv("DATA_ROOT", "data"))
         factors_cfg = config.get("factor_config", {})
         self.winsorize_q = factors_cfg.get("winsorize_quantile", 0.01)
         self.use_hk_hold = factors_cfg.get("use_hk_hold", True)

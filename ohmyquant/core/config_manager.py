@@ -140,7 +140,7 @@ class ConfigManager:
             },
             "data": {
                 "source": "duckdb",
-                "data_root": "D:/Work/Project/download_a_share/data",
+                "data_root": os.getenv("DATA_ROOT", "data"),
             },
             "rebalance": {
                 "frequency": "monthly",

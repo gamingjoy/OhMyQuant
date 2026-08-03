@@ -43,6 +43,7 @@ import polars as pl
 from ...core.logging import get_logger
 from ...core.plugin_system import register_selector
 from ..selector import BaseSelector
+import os
 
 logger = get_logger(__name__)
 
@@ -66,7 +67,7 @@ class IndustryRotationSelector(BaseSelector):
         super().__init__(config)
         ir_cfg = self.config.get("industry_rotation", {})
         self.data_root = ir_cfg.get(
-            "data_root", "D:/Work/Project/download_a_share/data"
+            "data_root", os.getenv("DATA_ROOT", "data")
         )
         self.top_industries: int = ir_cfg.get("top_industries", 5)
         self.stocks_per_industry: int = ir_cfg.get("stocks_per_industry", 2)

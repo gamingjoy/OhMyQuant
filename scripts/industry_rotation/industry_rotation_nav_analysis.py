@@ -20,11 +20,12 @@ import polars as pl
 from openpyxl import load_workbook
 
 from ohmyquant.data.sources.duckdb_source import DuckDBSource
+import os
 
 CAPITAL = 10_000_000
 COST_RATE = 0.001
 BENCHMARK = "000300.XSHG"  # 沪深300
-DATA_ROOT = "D:/Work/Project/download_a_share/data"
+DATA_ROOT = os.getenv("DATA_ROOT", "data")
 OOS_START = "2026-06-01"
 
 

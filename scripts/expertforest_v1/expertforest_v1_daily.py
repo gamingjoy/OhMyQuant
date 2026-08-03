@@ -29,11 +29,12 @@ from ohmyquant.execution.ths_utils import (
     write_xlsx,
 )
 from ohmyquant.strategy.runner import run_oos_backtest
+import os
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_VERSION = "v1"
-DATA_ROOT = "D:/Work/Project/download_a_share/data"
+DATA_ROOT = os.getenv("DATA_ROOT", "data")
 OOS_START = "2026-06-01"
 OUTPUT_DIR = Path(f"output/ths/expertforest_v1")
 

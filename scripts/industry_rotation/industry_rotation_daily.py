@@ -39,11 +39,12 @@ from ohmyquant.execution.ths_utils import (
 )
 from ohmyquant.strategy import StrategyRegistry, StrategyRunner
 from ohmyquant.strategy.runner import run_oos_backtest as _run_oos_backtest
+import os
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_VERSION = "v53"  # 当前 final 版本（v43 为旧 final，已 superseded）
-DATA_ROOT = "D:/Work/Project/download_a_share/data"
+DATA_ROOT = os.getenv("DATA_ROOT", "data")
 OOS_START = "2026-06-01"
 OUTPUT_DIR = Path(f"output/ths/industry_rotation_{DEFAULT_VERSION}")
 
