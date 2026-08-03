@@ -46,30 +46,32 @@ ohmyquant/strategy/strategies/your_strategy/
     └── config.yaml      # 策略配置
 ```
 
-**strategy.py** 必须继承 `BaseStrategy` 并实现:
+**strategy.py** 必须继承 `BaseStrategy` 并实现 `from_version` 工厂方法:
 
 ```python
-from ohmyquant.strategy.base import BaseStrategy, register_strategy
+from __future__ import annotations
 
-@register_strategy("your_strategy")
+from ohmyquant.strategy.base import BaseStrategy
+from ohmyquant.strategy import register_strategy
+
+@register_strategy("your_strategy", "v1")
 class YourStrategyV1(BaseStrategy):
+    """策略描述"""
+
     @classmethod
-    def from_version(cls, version: str = "v1", config_overrides: dict | None = None):
-        """工厂方法: 从版本创建策略实例"""
-        ...
+    def from_version(
+        cls, strategy_type: str, version: str, config: dict | None = None
+    ) -> "YourStrategyV1":
+        """工厂方法: 校验 + 加载 config.yaml + 深度合并运行时覆盖"""
+        if strategy_type != "your_strategy" or version != "v1":
+            raise ValueError(f"不支持: {strategy_type} {version}")
 
-    def run(self):
-        """执行回测,返回 BacktestResult"""
-        ...
-
-    def get_latest_positions(self) -> dict[str, float]:
-        """返回最新持仓 {code: weight}"""
-        ...
-
-    def get_config_summary(self) -> dict:
-        """返回配置摘要"""
-        ...
+        # BaseStrategy._load_config_yaml 自动加载同目录 config.yaml 并深度合并
+        base_config = cls._load_config_yaml(config)
+        return cls(base_config)
 ```
+
+> `run()` 和 `get_latest_positions()` 有默认实现（通过 `StrategyRunner` 运行回测），如需自定义回测流程再重写。
 
 **config.yaml** 参考现有策略格式。
 

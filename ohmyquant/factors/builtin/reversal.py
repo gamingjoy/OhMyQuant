@@ -10,7 +10,7 @@ from ..base import Factor, register_factor
 from .momentum import _pct_change
 
 
-@register_factor("rev_5d", category="reversal")
+@register_factor()
 class Reversal5D(Factor):
     """5日反转因子（反向）"""
 
@@ -19,12 +19,13 @@ class Reversal5D(Factor):
     description = "5日反转（近期收益的反向）"
     direction = -1
     required_fields = ["close"]
+    params = {"window": 5}
 
     def compute(self, data: dict[str, pl.DataFrame]) -> pl.DataFrame:
-        return _pct_change(data["close"], 5)
+        return _pct_change(data["close"], self.params["window"])
 
 
-@register_factor("rev_10d", category="reversal")
+@register_factor()
 class Reversal10D(Factor):
     """10日反转因子"""
 
@@ -33,12 +34,13 @@ class Reversal10D(Factor):
     description = "10日反转"
     direction = -1
     required_fields = ["close"]
+    params = {"window": 10}
 
     def compute(self, data: dict[str, pl.DataFrame]) -> pl.DataFrame:
-        return _pct_change(data["close"], 10)
+        return _pct_change(data["close"], self.params["window"])
 
 
-@register_factor("rev_20d", category="reversal")
+@register_factor()
 class Reversal20D(Factor):
     """20日反转因子"""
 
@@ -47,9 +49,10 @@ class Reversal20D(Factor):
     description = "20日反转"
     direction = -1
     required_fields = ["close"]
+    params = {"window": 20}
 
     def compute(self, data: dict[str, pl.DataFrame]) -> pl.DataFrame:
-        return _pct_change(data["close"], 20)
+        return _pct_change(data["close"], self.params["window"])
 
 
 __all__ = ["Reversal5D", "Reversal10D", "Reversal20D"]

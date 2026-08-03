@@ -10,7 +10,7 @@ from ..base import Factor, register_factor
 from .volatility import _daily_returns
 
 
-@register_factor("turnover_20d", category="volume_price")
+@register_factor()
 class Turnover20D(Factor):
     """20日平均换手率"""
 
@@ -19,16 +19,17 @@ class Turnover20D(Factor):
     description = "20日平均换手率"
     direction = -1  # 低换手率因子
     required_fields = ["volume"]
+    params = {"window": 20}
 
     def compute(self, data: dict[str, pl.DataFrame]) -> pl.DataFrame:
         volume = data["volume"]
         date_col = volume["date"]
         numeric = volume.drop("date")
-        result = numeric.select(pl.all().rolling_mean(window_size=20))
+        result = numeric.select(pl.all().rolling_mean(window_size=self.params["window"]))
         return result.insert_column(0, date_col)
 
 
-@register_factor("volume_ratio", category="volume_price")
+@register_factor()
 class VolumeRatio(Factor):
     """量比因子（当日成交量 / 20日均量）"""
 
@@ -37,17 +38,18 @@ class VolumeRatio(Factor):
     description = "量比（当日量/20日均量）"
     direction = 1
     required_fields = ["volume"]
+    params = {"window": 20}
 
     def compute(self, data: dict[str, pl.DataFrame]) -> pl.DataFrame:
         volume = data["volume"]
         date_col = volume["date"]
         numeric = volume.drop("date")
-        avg = numeric.select(pl.all().rolling_mean(window_size=20))
+        avg = numeric.select(pl.all().rolling_mean(window_size=self.params["window"]))
         result = numeric / (avg + 1e-8)
         return result.insert_column(0, date_col)
 
 
-@register_factor("amount_20d", category="volume_price")
+@register_factor()
 class Amount20D(Factor):
     """20日平均成交额"""
 
@@ -56,16 +58,17 @@ class Amount20D(Factor):
     description = "20日平均成交额"
     direction = 1
     required_fields = ["money"]
+    params = {"window": 20}
 
     def compute(self, data: dict[str, pl.DataFrame]) -> pl.DataFrame:
         money = data["money"]
         date_col = money["date"]
         numeric = money.drop("date")
-        result = numeric.select(pl.all().rolling_mean(window_size=20))
+        result = numeric.select(pl.all().rolling_mean(window_size=self.params["window"]))
         return result.insert_column(0, date_col)
 
 
-@register_factor("price_volume_corr", category="volume_price")
+@register_factor()
 class PriceVolumeCorrelation(Factor):
     """量价相关系数（20日滚动）"""
 
@@ -74,6 +77,7 @@ class PriceVolumeCorrelation(Factor):
     description = "20日收益率与成交量变化的相关系数"
     direction = 1
     required_fields = ["close", "volume"]
+    params = {"window": 20}
 
     def compute(self, data: dict[str, pl.DataFrame]) -> pl.DataFrame:
         close = data["close"]
@@ -87,11 +91,11 @@ class PriceVolumeCorrelation(Factor):
 
         # 滚动相关系数（简化：用乘积均值近似）
         product = ret * vol_chg
-        result = product.select(pl.all().rolling_mean(window_size=20))
+        result = product.select(pl.all().rolling_mean(window_size=self.params["window"]))
         return result.insert_column(0, date_col)
 
 
-@register_factor("obv_slope", category="volume_price")
+@register_factor()
 class OBVSlope(Factor):
     """OBV 斜率因子
 
@@ -103,11 +107,13 @@ class OBVSlope(Factor):
     description = "OBV20日斜率"
     direction = 1
     required_fields = ["close", "volume"]
+    params = {"window": 20}
 
     def compute(self, data: dict[str, pl.DataFrame]) -> pl.DataFrame:
         close = data["close"]
         volume = data["volume"]
         date_col = close["date"]
+        window = self.params["window"]
 
         close_num = close.drop("date")
         vol_num = volume.drop("date")
@@ -117,8 +123,8 @@ class OBVSlope(Factor):
         signed_vol = vol_num * ret_sign
         obv = signed_vol.select(pl.all().cum_sum())
 
-        # 20日斜率近似：(OBV[t] - OBV[t-20]) / 20
-        result = (obv - obv.shift(20)) / 20
+        # window日斜率近似：(OBV[t] - OBV[t-window]) / window
+        result = (obv - obv.shift(window)) / window
         return result.insert_column(0, date_col)
 
 

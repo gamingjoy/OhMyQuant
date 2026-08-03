@@ -261,17 +261,56 @@ class PluginRegistry:
 # 便捷装饰器
 # ---------------------------------------------------------------------------
 
-def register_factor(name: str | None = None, category: str = "", meta: PluginMeta | None = None):
+def register_factor(
+    name: str | None = None,
+    category: str = "",
+    meta: PluginMeta | None = None,
+):
     """注册因子
 
-    @register_factor("mom_1m", category="momentum")
-    class Momentum1M(Factor): ...
+    自动从类属性读取 name 和 category（如果未在装饰器参数中指定）。
+
+    Usage:
+        @register_factor()  # 从类属性 name, category 读取
+        class Momentum1M(Factor):
+            name = "mom_1m"
+            category = "momentum"
+            ...
+
+        @register_factor("custom_name", category="custom")  # 覆盖类属性
+        class MyFactor(Factor):
+            ...
     """
-    if meta is None and category:
-        meta = PluginMeta(name=name or "", category=category)
-    elif meta is not None and category:
-        meta.category = category
-    return PluginRegistry.register(PluginType.FACTOR, name, meta)
+    def decorator(klass: type) -> type:
+        # 优先用装饰器参数，否则从类属性读取
+        factor_name = name or getattr(klass, "name", None) or klass.__name__
+        factor_category = category or getattr(klass, "category", "")
+        factor_version = getattr(klass, "version", "v1")
+
+        if meta is None:
+            meta_obj = PluginMeta(
+                name=factor_name,
+                version=factor_version,
+                category=factor_category,
+                description=(klass.__doc__ or "").strip().split("\n")[0],
+            )
+        else:
+            meta_obj = meta
+            if not meta_obj.name:
+                meta_obj.name = factor_name
+            if factor_category:
+                meta_obj.category = factor_category
+            if not meta_obj.version or meta_obj.version == "1.0":
+                meta_obj.version = factor_version
+
+        registry = PluginRegistry._registries.setdefault(PluginType.FACTOR, {})
+        if factor_name in registry:
+            logger.debug(f"因子已存在，覆盖注册: {factor_name}")
+        registry[factor_name] = (klass, meta_obj)
+        logger.debug(f"注册因子: {factor_name} -> {klass.__name__}")
+        return klass
+
+    return decorator
 
 
 def register_selector(name: str | None = None, meta: PluginMeta | None = None):

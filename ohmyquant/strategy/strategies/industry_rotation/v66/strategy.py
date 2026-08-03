@@ -23,14 +23,5 @@ class IndustryRotationStrategyV66(BaseStrategy):
         if strategy_type != "industry_rotation" or version != "v66":
             raise ValueError(f"不支持的策略版本: {strategy_type} {version}")
 
-        import yaml
-        from pathlib import Path
-
-        config_path = Path(__file__).parent / "config.yaml"
-        with open(config_path, "r", encoding="utf-8") as f:
-            base_config = yaml.safe_load(f)
-
-        if config:
-            base_config.update(config)
-
+        base_config = cls._load_config_yaml(config)
         return cls(base_config)

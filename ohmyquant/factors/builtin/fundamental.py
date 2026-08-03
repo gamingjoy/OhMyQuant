@@ -44,7 +44,7 @@ def _log_transform(df: pl.DataFrame) -> pl.DataFrame:
     return logged.insert_column(0, date_col)
 
 
-@register_factor("ep_ratio", category="fundamental")
+@register_factor()
 class EPRatio(Factor):
     """盈利收益率（E/P = 1/PE）"""
 
@@ -58,7 +58,7 @@ class EPRatio(Factor):
         return _invert(data["pe_ratio"])
 
 
-@register_factor("bp_ratio", category="fundamental")
+@register_factor()
 class BPRatio(Factor):
     """账面价值比（B/P = 1/PB）"""
 
@@ -72,7 +72,7 @@ class BPRatio(Factor):
         return _invert(data["pb_ratio"])
 
 
-@register_factor("sp_ratio", category="fundamental")
+@register_factor()
 class SPRatio(Factor):
     """市销率倒数（S/P = 1/PS）"""
 
@@ -86,7 +86,7 @@ class SPRatio(Factor):
         return _invert(data["ps_ratio"])
 
 
-@register_factor("turnover_ratio", category="fundamental")
+@register_factor()
 class TurnoverRatio(Factor):
     """换手率因子（低换手率溢价）"""
 
@@ -100,7 +100,7 @@ class TurnoverRatio(Factor):
         return data["turnover_ratio"]
 
 
-@register_factor("log_market_cap", category="fundamental")
+@register_factor()
 class LogMarketCap(Factor):
     """对数市值因子（小市值溢价）"""
 
@@ -114,7 +114,7 @@ class LogMarketCap(Factor):
         return _log_transform(data["market_cap"])
 
 
-@register_factor("dividend_yield", category="fundamental")
+@register_factor()
 class DividendYield(Factor):
     """股息率因子"""
 

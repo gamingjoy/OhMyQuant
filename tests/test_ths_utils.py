@@ -148,12 +148,14 @@ class TestGetOpenPrices:
     def test_basic_fetch(self, mock_source_cls):
         """正常获取开盘价"""
         mock_source = MagicMock()
-        mock_source.load_daily_price.return_value = MagicMock(
-            iter_rows=lambda: [
-                {"code": "000001", "open": 10.5},
-                {"code": "000002", "open": 20.3},
-            ]
-        )
+        # 构造满足 len(df) > 0 且 iter_rows(named=True) 的 mock DataFrame
+        mock_df = MagicMock()
+        mock_df.__len__.return_value = 2
+        mock_df.iter_rows.return_value = [
+            {"code": "000001", "open": 10.5},
+            {"code": "000002", "open": 20.3},
+        ]
+        mock_source.load_daily_price.return_value = mock_df
         result = get_open_prices(mock_source, ["000001", "000002"], "2026-06-01")
         assert result["000001"] == 10.5
         assert result["000002"] == 20.3
@@ -162,7 +164,9 @@ class TestGetOpenPrices:
     def test_empty_codes(self, mock_source_cls):
         """空股票列表"""
         mock_source = MagicMock()
-        mock_source.load_daily_price.return_value = MagicMock(iter_rows=lambda: [])
+        mock_df = MagicMock()
+        mock_df.__len__.return_value = 0
+        mock_source.load_daily_price.return_value = mock_df
         result = get_open_prices(mock_source, [], "2026-06-01")
         assert result == {}
 

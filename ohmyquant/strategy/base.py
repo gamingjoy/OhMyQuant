@@ -132,6 +132,53 @@ class BaseStrategy(ABC):
         """
         ...
 
+    @classmethod
+    def _load_config_yaml(
+        cls, config: dict | None = None
+    ) -> dict:
+        """加载策略目录下的 config.yaml 并深度合并运行时覆盖
+
+        子类的 from_version 在校验 strategy_type/version 后调用此方法，
+        避免 YAML 加载 + 深度合并逻辑在每个策略中重复。
+
+        Args:
+            config: 运行时配置覆盖（可选）
+
+        Returns:
+            合并后的配置字典
+        """
+        import inspect
+        from pathlib import Path
+
+        import yaml
+
+        config_path = Path(inspect.getfile(cls)).parent / "config.yaml"
+        with open(config_path, "r", encoding="utf-8") as f:
+            base_config = yaml.safe_load(f)
+
+        if config:
+            base_config = cls._deep_merge(base_config, config)
+        return base_config
+
+    @staticmethod
+    def _deep_merge(base: dict, override: dict) -> dict:
+        """深度合并两个字典（递归）
+
+        Args:
+            base: 基础字典
+            override: 覆盖字典
+
+        Returns:
+            合并后的新字典
+        """
+        result = dict(base)
+        for k, v in override.items():
+            if k in result and isinstance(result[k], dict) and isinstance(v, dict):
+                result[k] = BaseStrategy._deep_merge(result[k], v)
+            else:
+                result[k] = v
+        return result
+
 
 def register_strategy(strategy_type: str, version: str):
     """装饰器：注册策略类

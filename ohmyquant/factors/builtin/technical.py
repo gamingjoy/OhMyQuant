@@ -37,7 +37,7 @@ def _rolling_min(df: pl.DataFrame, window: int) -> pl.DataFrame:
     return result.insert_column(0, date_col)
 
 
-@register_factor("rsi_14", category="technical")
+@register_factor()
 class RSI14(Factor):
     """14日 RSI 相对强弱指标"""
 
@@ -46,11 +46,13 @@ class RSI14(Factor):
     description = "14日RSI"
     direction = 1
     required_fields = ["close"]
+    params = {"window": 14}
 
     def compute(self, data: dict[str, pl.DataFrame]) -> pl.DataFrame:
         close = data["close"]
         date_col = close["date"]
         numeric = close.drop("date")
+        window = self.params["window"]
 
         delta = numeric - numeric.shift(1)
         gain = delta.select(
@@ -61,10 +63,10 @@ class RSI14(Factor):
         )
 
         avg_gain = gain.select(
-            [pl.col(c).rolling_mean(window_size=14).alias(c) for c in gain.columns]
+            [pl.col(c).rolling_mean(window_size=window).alias(c) for c in gain.columns]
         )
         avg_loss = loss.select(
-            [pl.col(c).rolling_mean(window_size=14).alias(c) for c in loss.columns]
+            [pl.col(c).rolling_mean(window_size=window).alias(c) for c in loss.columns]
         )
 
         rs = avg_gain / (avg_loss + 1e-8)
@@ -74,7 +76,7 @@ class RSI14(Factor):
         return rsi.insert_column(0, date_col)
 
 
-@register_factor("ma_5_20_cross", category="technical")
+@register_factor()
 class MA5Cross20(Factor):
     """5日均线上穿20日均线（金叉信号）"""
 
@@ -83,26 +85,29 @@ class MA5Cross20(Factor):
     description = "5日/20日均线交叉信号"
     direction = 1
     required_fields = ["close"]
+    params = {"short_window": 5, "long_window": 20}
 
     def compute(self, data: dict[str, pl.DataFrame]) -> pl.DataFrame:
         close = data["close"]
         date_col = close["date"]
         numeric = close.drop("date")
+        short_w = self.params["short_window"]
+        long_w = self.params["long_window"]
 
-        ma5 = numeric.select(
-            [pl.col(c).rolling_mean(window_size=5).alias(c) for c in numeric.columns]
+        ma_short = numeric.select(
+            [pl.col(c).rolling_mean(window_size=short_w).alias(c) for c in numeric.columns]
         )
-        ma20 = numeric.select(
-            [pl.col(c).rolling_mean(window_size=20).alias(c) for c in numeric.columns]
+        ma_long = numeric.select(
+            [pl.col(c).rolling_mean(window_size=long_w).alias(c) for c in numeric.columns]
         )
 
-        signal = (ma5 - ma20).select(
-            [pl.when(pl.col(c) > 0).then(1.0).otherwise(0.0).alias(c) for c in (ma5 - ma20).columns]
+        signal = (ma_short - ma_long).select(
+            [pl.when(pl.col(c) > 0).then(1.0).otherwise(0.0).alias(c) for c in (ma_short - ma_long).columns]
         )
         return signal.insert_column(0, date_col)
 
 
-@register_factor("bias_20", category="technical")
+@register_factor()
 class Bias20(Factor):
     """20日乖离率（价格偏离均线的程度）"""
 
@@ -111,20 +116,22 @@ class Bias20(Factor):
     description = "20日乖离率"
     direction = -1  # 高乖离率可能反转
     required_fields = ["close"]
+    params = {"window": 20}
 
     def compute(self, data: dict[str, pl.DataFrame]) -> pl.DataFrame:
         close = data["close"]
         date_col = close["date"]
         numeric = close.drop("date")
+        window = self.params["window"]
 
-        ma20 = numeric.select(
-            [pl.col(c).rolling_mean(window_size=20).alias(c) for c in numeric.columns]
+        ma = numeric.select(
+            [pl.col(c).rolling_mean(window_size=window).alias(c) for c in numeric.columns]
         )
-        bias = (numeric - ma20) / (ma20 + 1e-8)
+        bias = (numeric - ma) / (ma + 1e-8)
         return bias.insert_column(0, date_col)
 
 
-@register_factor("willr_14", category="technical")
+@register_factor()
 class WilliamsR14(Factor):
     """14日威廉指标"""
 
@@ -133,22 +140,24 @@ class WilliamsR14(Factor):
     description = "14日威廉指标"
     direction = 1
     required_fields = ["close", "high", "low"]
+    params = {"window": 14}
 
     def compute(self, data: dict[str, pl.DataFrame]) -> pl.DataFrame:
         close = data["close"]
         high = data["high"]
         low = data["low"]
         date_col = close["date"]
+        window = self.params["window"]
 
         close_num = close.drop("date")
         high_num = high.drop("date")
         low_num = low.drop("date")
 
         hh = high_num.select(
-            [pl.col(c).rolling_max(window_size=14).alias(c) for c in high_num.columns]
+            [pl.col(c).rolling_max(window_size=window).alias(c) for c in high_num.columns]
         )
         ll = low_num.select(
-            [pl.col(c).rolling_min(window_size=14).alias(c) for c in low_num.columns]
+            [pl.col(c).rolling_min(window_size=window).alias(c) for c in low_num.columns]
         )
 
         willr = (hh - close_num) / (hh - ll + 1e-8) * -100

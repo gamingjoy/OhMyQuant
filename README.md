@@ -4,7 +4,7 @@
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests: 50 passed](https://img.shields.io/badge/tests-50%20passed-brightgreen.svg)](#测试)
+[![Tests: 187 passed](https://img.shields.io/badge/tests-187%20passed-brightgreen.svg)](#测试)
 
 OhMyQuant 是一个模块化、可扩展的量化策略开发框架，支持 A股和 ETF 等金融产品的策略开发、回测与分析。支持行业轮动、专家集成等多种量化策略，支持插件化扩展，提供从数据接入到策略迭代的完整工具链。
 
@@ -24,6 +24,7 @@ OhMyQuant 是一个模块化、可扩展的量化策略开发框架，支持 A�
 - [项目结构](#项目结构)
 - [数据兼容性](#数据兼容性)
 - [FAQ](#faq)
+- [Changelog](#changelog)
 
 ---
 
@@ -59,7 +60,7 @@ OhMyQuant 是一个模块化、可扩展的量化策略开发框架，支持 A�
 │                    Backtest Engine                              │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐          │
 │  │ Selector │ │  Risk    │ │Allocator │ │Portfolio │          │
-│  │ 7 types  │ │ Manager  │ │  HRP/EW  │ │ Optimizer│          │
+│  │ 1 type   │ │ Manager  │ │  EW/HRP  │ │ Optimizer│          │
 │  └──────────┘ └──────────┘ └──────────┘ └──────────┘          │
 │  ┌──────────────────────────────────────────────┐              │
 │  │           Rebalancer + CostModel             │              │
@@ -89,22 +90,15 @@ OhMyQuant 是一个模块化、可扩展的量化策略开发框架，支持 A�
 ### 核心依赖安装
 
 ```bash
-# 核心依赖（必需）
-pip install polars duckdb pydantic loguru pyyaml
+# 安装框架（开发模式，包含 dev 依赖）
+pip install -e ".[dev]"
+
+# 或仅安装核心依赖
+pip install -e .
 
 # 可选依赖（按需安装）
-pip install plotly            # 可视化
-pip install scipy             # 统计检验
-```
-
-### 框架安装
-
-```bash
-git clone <repo_url>
-cd OhMyQuant
-pip install -e .  # 开发模式安装（如有 setup.py）
-# 或直接设置 PYTHONPATH
-export PYTHONPATH=/path/to/OhMyQuant
+pip install -e ".[viz,stats]"   # 可视化 + 统计检验
+pip install -e ".[all]"          # 全部可选依赖
 ```
 
 ### 数据准备
@@ -183,6 +177,8 @@ ohmyquant/strategy/strategies/<type>/<version>/
 
 ```python
 # ohmyquant/strategy/strategies/mystrategy/v1/strategy.py
+from __future__ import annotations
+
 from ohmyquant.engine.base import BacktestResult
 from ohmyquant.strategy import register_strategy
 from ohmyquant.strategy.base import BaseStrategy
@@ -191,39 +187,19 @@ from ohmyquant.strategy.base import BaseStrategy
 class MyStrategyV1(BaseStrategy):
     """我的策略 v1"""
 
-    def run(self) -> BacktestResult:
-        from ...strategy.runner import StrategyRunner
-        runner = StrategyRunner(self.config)
-        return runner.run().backtest_result
-
-    def get_latest_positions(self) -> dict[str, float]:
-        return {}
-
     @classmethod
-    def from_version(cls, strategy_type, version, config=None):
+    def from_version(
+        cls, strategy_type: str, version: str, config: dict | None = None
+    ) -> "MyStrategyV1":
         if strategy_type != "mystrategy" or version != "v1":
             raise ValueError(f"不支持: {strategy_type} {version}")
 
-        base_config = {
-            "strategy_type": "mystrategy",
-            "strategy_version": "v1",
-            "backtest": {
-                "start_date": "2015-01-01",
-                "end_date": "2024-12-31",
-                "data_start_date": "2010-01-01",
-            },
-            "selection": {"method": "industry_rotation", "top_n": 20, "max_stock_weight": 0.05},
-            "risk": {"target_vol": 0.20},
-            "allocation": {"method": "equal"},
-            "rebalance": {"frequency": "monthly", "method": "cost_benefit"},
-            "factors": ["mom_1m", "mom_3m", "vol_20d"],
-            "pools": {"main": ["600519.SH", "601318.SH", "000858.SZ"]},
-            "data": {"source": "duckdb", "data_root": os.getenv("DATA_ROOT", "data")},
-        }
-        if config:
-            base_config.update(config)
+        # 使用 BaseStrategy._load_config_yaml 加载 config.yaml 并深度合并
+        base_config = cls._load_config_yaml(config)
         return cls(base_config)
 ```
+
+策略的 `run()` 和 `get_latest_positions()` 默认使用 `BaseStrategy` 提供的实现（通过 `StrategyRunner` 运行回测）。如需自定义回测流程，重写 `run()` 方法即可。
 
 3. **注册策略**
 
@@ -284,7 +260,7 @@ data:
 import polars as pl
 from ..base import Factor, register_factor
 
-@register_factor("my_factor", category="custom")
+@register_factor()  # 自动从类属性读取 name, category
 class MyFactor(Factor):
     """自定义因子说明"""
 
@@ -293,6 +269,9 @@ class MyFactor(Factor):
     description = "我的自定义因子"
     direction = 1   # 1=正向（值大→收益高），-1=反向
     required_fields = ["close", "volume"]
+    params = {"window": 20}  # 可配置参数，运行时用 config 覆盖
+    depends_on = []          # 依赖的其他因子名
+    version = "v1"           # 因子版本
 
     def compute(self, data: dict[str, pl.DataFrame]) -> pl.DataFrame:
         close = data["close"]
@@ -300,18 +279,37 @@ class MyFactor(Factor):
         date_col = close["date"]
         close_num = close.drop("date")
         vol_num = volume.drop("date")
+        window = self.params["window"]
 
         # 计算因子值（返回 date × code 宽表）
         result = (close_num * vol_num).select(
-            [pl.col(c).rolling_mean(window_size=20).alias(c) for c in close_num.columns]
+            [pl.col(c).rolling_mean(window_size=window).alias(c) for c in close_num.columns]
         )
         return result.insert_column(0, date_col)
 ```
 
-在 `ohmyquant/factors/builtin/__init__.py` 中注册：
+> 放入 `factors/builtin/` 目录即可自动注册，无需修改 `__init__.py`。
+
+#### 因子高级特性
 
 ```python
-from . import my_factor
+# 参数化因子 — 运行时覆盖窗口期
+factor = FactorRegistry.create("mom_1m", config={"window": 15})
+
+# LRU 缓存 — 避免重复计算
+lib = FactorLibrary(config={"use_cache": True, "cache_size": 64})
+
+# 外部因子 — 从外部目录加载
+lib = FactorLibrary(config={"external_paths": ["path/to/my_factors"]})
+
+# 因子依赖 — 自动解析
+class MyFactor(Factor):
+    depends_on = ["mom_1m"]  # FactorLibrary 会自动先计算 mom_1m
+
+# 因子报告 — 一键生成分析
+gen = FactorReportGenerator()
+report = gen.generate("mom_1m", factor_values, forward_returns, close=close_df)
+gen.save(report, "reports/mom_1m.md")
 ```
 
 ### 因子分析
@@ -443,8 +441,9 @@ omq list strategies
 omq list factors
 omq list data_sources
 
-# 初始化项目
+# 初始化策略（创建在 ohmyquant/strategy/strategies/ 下）
 omq init my_strategy --type strategy
+omq init my_strategy --type strategy --version v2
 
 # 配置管理
 omq config show
@@ -483,6 +482,20 @@ python -m pytest tests/test_strategy.py -v
 python -m pytest tests/ --cov=ohmyquant --cov-report=html
 ```
 
+### CI/CD 与代码质量
+
+- **GitHub Actions** (`.github/workflows/test.yml`): Python 3.10/3.11/3.12 矩阵测试 + ruff lint
+- **Pre-commit hooks** (`.pre-commit-config.yaml`): ruff + ruff-format + 基础检查
+
+```bash
+# 安装 pre-commit hooks
+pip install pre-commit
+pre-commit install
+
+# 手动运行
+pre-commit run --all-files
+```
+
 ### 测试覆盖
 
 | 测试文件 | 覆盖模块 | 测试数 |
@@ -491,6 +504,13 @@ python -m pytest tests/ --cov=ohmyquant --cov-report=html
 | test_strategy.py | 策略注册、版本管理 | 5 |
 | test_backtest.py | 成本模型、执行器、引擎 | 6 |
 | test_analysis.py | 绩效指标、对比、显著性 | 11 |
+| test_ths_utils.py | THS 工具函数 | 20 |
+| test_rebalancer.py | 调仓器（3种+工厂） | 23 |
+| test_scheduler.py | 调度器（Calendar+Adaptive） | 17 |
+| test_selector.py | 选股器（权重上限+IC筛选） | 18 |
+| test_factors.py | 因子计算+参数化+缓存+依赖+版本+报告 | 60 |
+| test_walk_forward.py | Walk-Forward 窗口切分 | 17 |
+| **合计** | **10/10 文件覆盖** | **187** |
 
 ### 批量分析与验证
 
@@ -530,13 +550,13 @@ OhMyQuant/
 │   │   ├── base.py               #   Factor ABC + Registry
 │   │   ├── library.py            #   FactorLibrary
 │   │   ├── analysis.py           #   IC/ICIR 分析
-│   │   └── builtin/              #   39 个内置因子（7 类）
+│   │   └── builtin/              #   31 个内置因子（7 类）
 │   ├── engine/                   # 回测引擎
 │   │   ├── backtest.py           #   N 池向量化回测引擎
 │   │   ├── base.py               #   BacktestResult
 │   │   ├── selector.py           #   BaseSelector
 │   │   ├── selectors/            #   1 种选股器
-│   │   ├── allocators.py         #   分配器（HRP/EW/RP）
+│   │   ├── allocator.py           #   分配器（HRP/EW/RP）
 │   │   ├── risk_managers.py      #   风控管理器
 │   │   └── portfolio.py          #   组合优化器
 │   ├── strategy/                 # 策略管理
@@ -632,6 +652,12 @@ A: 在 config.yaml 或 from_version 中添加 `pools` 配置。StrategyRegistry.
 ### Q: 如何添加新的数据源？
 
 A: 实现 `DataSource` ABC 的所有抽象方法，用 `@register_data_source("my_source")` 注册，然后在 config 中指定 `source: my_source`。
+
+---
+
+## Changelog
+
+详见 [CHANGELOG.md](CHANGELOG.md)。
 
 ---
 

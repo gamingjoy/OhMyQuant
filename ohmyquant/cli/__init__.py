@@ -83,6 +83,7 @@ def main():
     init_parser = subparsers.add_parser("init", help="初始化项目")
     init_parser.add_argument("name", help="项目/策略名称")
     init_parser.add_argument("--type", choices=["strategy", "project"], default="strategy", help="类型")
+    init_parser.add_argument("--version", dest="strategy_version", default="v1", help="策略版本号（默认 v1）")
 
     config_parser = subparsers.add_parser("config", help="配置管理")
     config_parser.add_argument("action", choices=["show", "set", "reset"], help="操作")

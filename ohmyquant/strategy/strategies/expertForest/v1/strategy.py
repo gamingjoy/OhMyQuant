@@ -18,11 +18,6 @@ OOS: Sharpe=-0.0933, 超额=-0.53%, 回撤=-37.19% (抗过拟合后接近零)
 """
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any
-
-import yaml
-
 from ohmyquant.strategy import register_strategy
 from ohmyquant.strategy.base import BaseStrategy
 
@@ -38,14 +33,7 @@ class ExpertForestStrategyV1(BaseStrategy):
         if strategy_type != "expertForest" or version != "v1":
             raise ValueError(f"不支持的策略版本: {strategy_type} {version}")
 
-        config_path = Path(__file__).parent / "config.yaml"
-        with open(config_path, "r", encoding="utf-8") as f:
-            base_config = yaml.safe_load(f)
-
-        if config:
-            # 深度合并
-            base_config = _deep_merge(base_config, config)
-
+        base_config = cls._load_config_yaml(config)
         return cls(base_config)
 
     def run(self):
@@ -156,14 +144,3 @@ def _load_pool_codes(source, index: str) -> list[str]:
     else:
         constituents = source.load_index_constituents(index)
         return sorted(constituents)
-
-
-def _deep_merge(base: dict, override: dict) -> dict:
-    """深度合并两个字典"""
-    result = dict(base)
-    for k, v in override.items():
-        if k in result and isinstance(result[k], dict) and isinstance(v, dict):
-            result[k] = _deep_merge(result[k], v)
-        else:
-            result[k] = v
-    return result

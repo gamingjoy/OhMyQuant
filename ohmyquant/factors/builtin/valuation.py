@@ -9,7 +9,7 @@ import polars as pl
 from ..base import Factor, register_factor
 
 
-@register_factor("pe_ttm", category="valuation")
+@register_factor()
 class PETTM(Factor):
     """市盈率因子"""
 
@@ -29,7 +29,7 @@ class PETTM(Factor):
         return pl.DataFrame()
 
 
-@register_factor("pb_ratio", category="valuation")
+@register_factor()
 class PBRatio(Factor):
     """市净率因子"""
 
@@ -48,7 +48,7 @@ class PBRatio(Factor):
         return pl.DataFrame()
 
 
-@register_factor("ps_ratio", category="valuation")
+@register_factor()
 class PSRatio(Factor):
     """市销率因子"""
 
@@ -67,7 +67,7 @@ class PSRatio(Factor):
         return pl.DataFrame()
 
 
-@register_factor("market_cap", category="valuation")
+@register_factor()
 class MarketCap(Factor):
     """总市值因子"""
 

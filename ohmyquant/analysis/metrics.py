@@ -72,7 +72,7 @@ class PerformanceMetrics:
         }
 
 
-def _to_array(returns) -> np.ndarray:
+def _to_array(returns: pl.Series | np.ndarray | list) -> np.ndarray:
     """转换为 numpy array"""
     if isinstance(returns, pl.Series):
         return returns.to_numpy()
@@ -235,7 +235,8 @@ def compute_info_ratio(returns: np.ndarray, benchmark_returns: np.ndarray) -> fl
 
 
 def compute_metrics(
-    returns, benchmark_returns: np.ndarray | None = None
+    returns: pl.Series | np.ndarray | list,
+    benchmark_returns: np.ndarray | None = None,
 ) -> PerformanceMetrics:
     """计算所有绩效指标
 

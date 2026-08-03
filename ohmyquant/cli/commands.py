@@ -10,6 +10,7 @@
 """
 from __future__ import annotations
 
+import argparse
 import json
 import os
 from typing import Any
@@ -37,7 +38,7 @@ def _json_safe(obj):
     return obj
 
 
-def run_command(args) -> None:
+def run_command(args: argparse.Namespace) -> None:
     """运行策略"""
     print(f"运行策略: {args.strategy_type} v{args.version}")
 
@@ -74,7 +75,7 @@ def run_command(args) -> None:
         print(f"运行策略失败: {e}")
 
 
-def backtest_command(args) -> None:
+def backtest_command(args: argparse.Namespace) -> None:
     """执行回测"""
     print(f"执行回测: {args.strategy} v{args.version}")
 
@@ -119,7 +120,7 @@ def backtest_command(args) -> None:
         print(f"回测失败: {e}")
 
 
-def analyze_command(args) -> None:
+def analyze_command(args: argparse.Namespace) -> None:
     """分析回测结果"""
     print(f"分析回测结果: {args.results}")
 
@@ -166,7 +167,7 @@ def analyze_command(args) -> None:
         print(f"分析失败: {e}")
 
 
-def list_command(args) -> None:
+def list_command(args: argparse.Namespace) -> None:
     """列出已注册插件"""
     from ..core.plugin_system import PluginRegistry, PluginType
 
@@ -204,45 +205,105 @@ def list_command(args) -> None:
         print(f"  {name}{desc}")
 
 
-def init_command(args) -> None:
+def init_command(args: argparse.Namespace) -> None:
     """初始化项目/策略"""
     print(f"初始化: {args.name}")
 
     if args.type == "strategy":
-        strategy_dir = os.path.join("./strategies", args.name)
-        os.makedirs(strategy_dir, exist_ok=True)
+        version = getattr(args, "strategy_version", "v1")
+        # 策略创建在 ohmyquant/strategy/strategies/ 下以支持自动发现
+        pkg_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        strategy_dir = os.path.join(pkg_root, "strategy", "strategies", args.name)
+        version_dir = os.path.join(strategy_dir, version)
+        os.makedirs(version_dir, exist_ok=True)
 
-        v1_dir = os.path.join(strategy_dir, "v1")
-        os.makedirs(v1_dir, exist_ok=True)
+        # __init__.py（策略包入口）
+        init_path = os.path.join(strategy_dir, "__init__.py")
+        if not os.path.exists(init_path):
+            with open(init_path, "w", encoding="utf-8") as f:
+                f.write(f'"""{args.name} 策略包"""\n')
 
-        strategy_template = f'''"""策略实现 - {args.name} v1"""
-from ohmyquant.strategy.base import BaseStrategy
+        version_init = os.path.join(version_dir, "__init__.py")
+        if not os.path.exists(version_init):
+            with open(version_init, "w", encoding="utf-8") as f:
+                f.write(f'"""{args.name} {version}"""\n')
+
+        # strategy.py（使用 _load_config_yaml 减少模板代码）
+        class_name = "".join(w.capitalize() for w in args.name.split("_")) + version.capitalize()
+        strategy_template = f'''"""{args.name} {version} 策略实现
+
+策略描述: [在此填写策略核心思想]
+"""
+from __future__ import annotations
+
 from ohmyquant.strategy import register_strategy
+from ohmyquant.strategy.base import BaseStrategy
 
 
-@register_strategy("{args.name}", "v1")
-class {args.name.capitalize()}StrategyV1(BaseStrategy):
-    def run(self):
-        return {{}}
-    
-    def get_latest_positions(self):
-        return {{}}
-    
+@register_strategy("{args.name}", "{version}")
+class {class_name}(BaseStrategy):
+    """策略 {args.name}_{version}"""
+
     @classmethod
-    def from_version(cls, strategy_type, version, config=None):
-        return cls(config or {{}})
+    def from_version(
+        cls, strategy_type: str, version: str, config: dict | None = None
+    ) -> "{class_name}":
+        if strategy_type != "{args.name}" or version != "{version}":
+            raise ValueError(f"不支持的策略版本: {{strategy_type}} {{version}}")
+
+        base_config = cls._load_config_yaml(config)
+        return cls(base_config)
 '''
-        with open(os.path.join(v1_dir, "strategy.py"), "w", encoding="utf-8") as f:
+        with open(os.path.join(version_dir, "strategy.py"), "w", encoding="utf-8") as f:
             f.write(strategy_template)
 
-        config_template = f'''# {args.name} v1 配置
+        # config.yaml（完整配置模板）
+        config_template = f'''# {args.name} {version} 配置
+
 strategy_type: "{args.name}"
-version: "v1"
+strategy_version: "{version}"
+strategy_name: "{args.name} {version}"
+description: "策略描述"
+
+backtest:
+  start_date: "2022-01-01"
+  end_date: "2025-12-31"
+  data_start_date: "2020-01-01"
+  initial_capital: 10000000
+  benchmark: "000300.XSHG"
+
+selection:
+  method: industry_rotation
+  top_n: 10
+  max_stock_weight: 0.10
+
+risk:
+  target_vol: 0.20
+
+allocation:
+  method: equal
+
+rebalance:
+  frequency: weekly
+  method: cost_benefit
+  weekday: 0
+
+pools:
+  main: ["000300.XSHG"]
+
+data:
+  source: duckdb
+  data_root: "data"
 '''
-        with open(os.path.join(v1_dir, "config.yaml"), "w", encoding="utf-8") as f:
+        with open(os.path.join(version_dir, "config.yaml"), "w", encoding="utf-8") as f:
             f.write(config_template)
 
-        print(f"策略模板已创建: {strategy_dir}")
+        print(f"策略模板已创建: {version_dir}")
+        print(f"  - strategy.py (使用 _load_config_yaml)")
+        print(f"  - config.yaml (完整配置模板)")
+        print(f"  - __init__.py")
+        print(f"\n请在 ohmyquant/strategy/strategies/__init__.py 中注册:")
+        print(f'  from .{args.name}.{version}.strategy import {class_name}  # noqa: F401')
 
     elif args.type == "project":
         project_dir = args.name
@@ -261,7 +322,7 @@ version: "v1"
         print(f"项目已初始化: {project_dir}")
 
 
-def config_command(args) -> None:
+def config_command(args: argparse.Namespace) -> None:
     """配置管理"""
     config_file = os.path.expanduser("~/.ohmyquant/config.json")
 
@@ -302,7 +363,7 @@ def config_command(args) -> None:
             print("配置文件不存在")
 
 
-def optimize_command(args) -> None:
+def optimize_command(args: argparse.Namespace) -> None:
     """策略优化"""
     if args.optimize_command == "walk-forward":
         _optimize_walk_forward(args)
@@ -312,7 +373,7 @@ def optimize_command(args) -> None:
         print("请指定优化方法: walk-forward 或 param-search")
 
 
-def _optimize_walk_forward(args) -> None:
+def _optimize_walk_forward(args: argparse.Namespace) -> None:
     """Walk-Forward 滚动验证"""
     from ..optimization.walk_forward import StrategyWalkForward
 
@@ -335,7 +396,7 @@ def _optimize_walk_forward(args) -> None:
         print(f"Walk-Forward 失败: {e}")
 
 
-def _optimize_param_search(args) -> None:
+def _optimize_param_search(args: argparse.Namespace) -> None:
     """参数搜索"""
     import json as json_module
     from ..optimization.param_search import ParamSearcher
@@ -371,7 +432,7 @@ def _optimize_param_search(args) -> None:
         print(f"参数搜索失败: {e}")
 
 
-def compare_command(args) -> None:
+def compare_command(args: argparse.Namespace) -> None:
     """策略对比"""
     import numpy as np
     from ..analysis.compare import StrategyComparator
@@ -425,7 +486,7 @@ def compare_command(args) -> None:
         print(f"对比失败: {e}")
 
 
-def signal_command(args) -> None:
+def signal_command(args: argparse.Namespace) -> None:
     """获取策略最新持仓信号"""
     print(f"持仓信号: {args.strategy_type} {args.version}")
 
@@ -445,7 +506,7 @@ def signal_command(args) -> None:
         print(f"获取信号失败: {e}")
 
 
-def ensemble_command(args) -> None:
+def ensemble_command(args: argparse.Namespace) -> None:
     """多策略集成"""
     from ..optimization.ensemble import StrategyEnsemble
 

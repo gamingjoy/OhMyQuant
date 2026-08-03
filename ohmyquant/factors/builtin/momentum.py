@@ -18,7 +18,7 @@ def _pct_change(df: pl.DataFrame, n: int) -> pl.DataFrame:
     return result.insert_column(0, date_col)
 
 
-@register_factor("mom_1m", category="momentum")
+@register_factor()
 class Momentum1M(Factor):
     """1月动量因子（20日收益率）"""
 
@@ -27,12 +27,13 @@ class Momentum1M(Factor):
     description = "1月动量（20日收益率）"
     direction = 1
     required_fields = ["close"]
+    params = {"window": 20}
 
     def compute(self, data: dict[str, pl.DataFrame]) -> pl.DataFrame:
-        return _pct_change(data["close"], 20)
+        return _pct_change(data["close"], self.params["window"])
 
 
-@register_factor("mom_3m", category="momentum")
+@register_factor()
 class Momentum3M(Factor):
     """3月动量因子（60日收益率）"""
 
@@ -41,12 +42,13 @@ class Momentum3M(Factor):
     description = "3月动量（60日收益率）"
     direction = 1
     required_fields = ["close"]
+    params = {"window": 60}
 
     def compute(self, data: dict[str, pl.DataFrame]) -> pl.DataFrame:
-        return _pct_change(data["close"], 60)
+        return _pct_change(data["close"], self.params["window"])
 
 
-@register_factor("mom_6m", category="momentum")
+@register_factor()
 class Momentum6M(Factor):
     """6月动量因子（120日收益率）"""
 
@@ -55,12 +57,13 @@ class Momentum6M(Factor):
     description = "6月动量（120日收益率）"
     direction = 1
     required_fields = ["close"]
+    params = {"window": 120}
 
     def compute(self, data: dict[str, pl.DataFrame]) -> pl.DataFrame:
-        return _pct_change(data["close"], 120)
+        return _pct_change(data["close"], self.params["window"])
 
 
-@register_factor("mom_12m", category="momentum")
+@register_factor()
 class Momentum12M(Factor):
     """12月动量因子（240日收益率）"""
 
@@ -69,12 +72,13 @@ class Momentum12M(Factor):
     description = "12月动量（240日收益率）"
     direction = 1
     required_fields = ["close"]
+    params = {"window": 240}
 
     def compute(self, data: dict[str, pl.DataFrame]) -> pl.DataFrame:
-        return _pct_change(data["close"], 240)
+        return _pct_change(data["close"], self.params["window"])
 
 
-@register_factor("mom_skip_1m", category="momentum")
+@register_factor()
 class MomentumSkip1M(Factor):
     """12月动量跳过最近1月（经典动量因子）"""
 
@@ -83,13 +87,15 @@ class MomentumSkip1M(Factor):
     description = "12-1月动量（跳过最近1月的12月动量）"
     direction = 1
     required_fields = ["close"]
+    params = {"skip": 20, "lookback": 260}
 
     def compute(self, data: dict[str, pl.DataFrame]) -> pl.DataFrame:
         close = data["close"]
         date_col = close["date"]
         numeric = close.drop("date")
-        # (close[t-20] / close[t-260]) - 1
-        result = (numeric.shift(20) / numeric.shift(260)) - 1
+        skip = self.params["skip"]
+        lookback = self.params["lookback"]
+        result = (numeric.shift(skip) / numeric.shift(lookback)) - 1
         return result.insert_column(0, date_col)
 
 

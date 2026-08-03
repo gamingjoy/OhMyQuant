@@ -12,7 +12,7 @@ CLI (cli/)
         ├── StrategyRunner → BacktestEngine (engine/)
         │     ├── Selector (engine/selectors/)    ← 因子驱动选股
         │     ├── RiskManager (engine/risk_managers/)  ← 波动率/回撤风控
-        │     ├── Allocator (engine/allocators/)  ← 等权/HRP/ICIR加权
+        │     ├── Allocator (engine/allocator.py)  ← 等权/HRP/ICIR加权
         │     └── PortfolioOptimizer (engine/portfolio.py)
         ├── Factors (factors/)                    ← 31 个内置因子
         │     └── FactorAnalyzer (factors/analysis.py)  ← IC/ICIR 分析
