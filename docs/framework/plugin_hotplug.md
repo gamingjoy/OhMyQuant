@@ -108,7 +108,7 @@ class MytypeStrategyV1(BaseStrategy):
             "strategy_version": "v1",
             "backtest": {"start_date": "2015-01-01", "end_date": "2024-12-31"},
             "factors": ["mom_1m"],
-            "data": {"source": "duckdb", "data_root": "D:/Work/Project/download_a_share/data"},
+            "data": {"source": "duckdb", "data_root": "data"},  # data_root 通过环境变量 DATA_ROOT 配置
         }
         if config:
             base_config.update(config)

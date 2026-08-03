@@ -4,9 +4,9 @@
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests: 30 passed](https://img.shields.io/badge/tests-30%20passed-brightgreen.svg)](#测试)
+[![Tests: 50 passed](https://img.shields.io/badge/tests-50%20passed-brightgreen.svg)](#测试)
 
-OhMyQuant 是一个模块化、可扩展的量化策略开发框架，支持 A股和 ETF 等金融产品的策略开发、回测与分析。框架聚焦行业轮动策略，支持插件化扩展，提供从数据接入到策略迭代的完整工具链。
+OhMyQuant 是一个模块化、可扩展的量化策略开发框架，支持 A股和 ETF 等金融产品的策略开发、回测与分析。支持行业轮动、专家集成等多种量化策略，支持插件化扩展，提供从数据接入到策略迭代的完整工具链。
 
 ---
 
@@ -31,7 +31,7 @@ OhMyQuant 是一个模块化、可扩展的量化策略开发框架，支持 A�
 
 | 特性 | 说明 |
 |------|------|
-| **多策略统一** | 行业轮动策略在同一框架下开发与回测，支持插件化扩展 |
+| **多策略统一** | 多策略在同一框架下开发与回测，支持插件化扩展 |
 | **插件化架构** | 因子、选股器、风控、分配器、调仓器、成本模型、数据源全部可插拔注册 |
 | **N 池回测引擎** | 支持多股票池并行回测，池间动态分配，向量化解算 |
 | **31 个内置因子** | 动量、反转、技术、估值、波动率、量价、基本面 7 大类 |
@@ -135,8 +135,8 @@ data/
 ```python
 from ohmyquant.strategy.runner import StrategyRunner
 
-# 运行 industry_rotation v5 策略回测
-result = StrategyRunner.run_strategy("industry_rotation", "v5")
+# 运行 industry_rotation v66 策略回测
+result = StrategyRunner.run_strategy("industry_rotation", "v66")
 
 # 查看结果
 bt = result.backtest_result
@@ -148,7 +148,7 @@ print(f"回测天数: {bt.n_days}")
 
 ```bash
 # 运行策略
-python -m ohmyquant.cli run industry_rotation v5
+python -m ohmyquant.cli run industry_rotation v66
 
 # 列出所有策略
 python -m ohmyquant.cli list strategies
@@ -218,7 +218,7 @@ class MyStrategyV1(BaseStrategy):
             "rebalance": {"frequency": "monthly", "method": "cost_benefit"},
             "factors": ["mom_1m", "mom_3m", "vol_20d"],
             "pools": {"main": ["600519.SH", "601318.SH", "000858.SZ"]},
-            "data": {"source": "duckdb", "data_root": "D:/Work/Project/download_a_share/data"},
+            "data": {"source": "duckdb", "data_root": os.getenv("DATA_ROOT", "data")},
         }
         if config:
             base_config.update(config)
@@ -252,7 +252,7 @@ pools:
   main: ["600519.SH", "601318.SH"]
 data:
   source: duckdb
-  data_root: "D:/Work/Project/download_a_share/data"
+  data_root: os.getenv("DATA_ROOT", "data")
 ```
 
 ### 选股器
@@ -341,8 +341,8 @@ print(f"ICIR: {ic_df['ic'].mean() / ic_df['ic'].std()}")
 - 是否存在特定区间失效
 
 ```bash
-# 跨周期验证 industry_rotation v5
-omq optimize walk-forward industry_rotation v5 --window 1Y --step 1Y
+# 跨周期验证 industry_rotation v66
+omq optimize walk-forward industry_rotation v66 --window 1Y --step 1Y
 ```
 
 ---
@@ -362,8 +362,8 @@ strategy/.../config.yaml    → 策略版本配置
 ```yaml
 # 策略元信息
 strategy_type: industry_rotation
-strategy_version: v2
-strategy_name: "行业轮动策略 v5"
+strategy_version: v66
+strategy_name: "行业轮动策略 v66"
 
 # 回测配置
 backtest:
@@ -419,7 +419,7 @@ pools:
 # 数据源
 data:
   source: duckdb
-  data_root: "D:/Work/Project/download_a_share/data"
+  data_root: os.getenv("DATA_ROOT", "data")
 ```
 
 ---
@@ -428,11 +428,11 @@ data:
 
 ```bash
 # 运行策略
-omq run industry_rotation v5
-omq run industry_rotation v5 --config custom.yaml
+omq run industry_rotation v66
+omq run industry_rotation v66 --config custom.yaml
 
 # 执行回测（指定日期）
-omq backtest --strategy industry_rotation --version v5 --start 2020-01-01 --end 2024-12-31
+omq backtest --strategy industry_rotation --version v66 --start 2020-01-01 --end 2024-12-31
 
 # 分析结果
 omq analyze --results results.json --metrics
@@ -458,11 +458,11 @@ omq config reset
 # omq ensemble strategy_a strategy_b --weighting perf_weight
 
 # 策略优化
-omq optimize walk-forward industry_rotation v5 --window 1Y --step 1Y
-omq optimize param-search industry_rotation v5 --params '{"top_n": [20, 50, 100]}' --n-trials 30
+omq optimize walk-forward industry_rotation v66 --window 1Y --step 1Y
+omq optimize param-search industry_rotation v66 --params '{"top_n": [20, 50, 100]}' --n-trials 30
 
 # 获取最新持仓信号
-omq signal industry_rotation v5
+omq signal industry_rotation v66
 ```
 
 ---
@@ -530,12 +530,12 @@ OhMyQuant/
 │   │   ├── base.py               #   Factor ABC + Registry
 │   │   ├── library.py            #   FactorLibrary
 │   │   ├── analysis.py           #   IC/ICIR 分析
-│   │   └── builtin/              #   31 个内置因子（7 类）
+│   │   └── builtin/              #   39 个内置因子（7 类）
 │   ├── engine/                   # 回测引擎
 │   │   ├── backtest.py           #   N 池向量化回测引擎
 │   │   ├── base.py               #   BacktestResult
 │   │   ├── selector.py           #   BaseSelector
-│   │   ├── selectors/            #   4 种选股器
+│   │   ├── selectors/            #   1 种选股器
 │   │   ├── allocators.py         #   分配器（HRP/EW/RP）
 │   │   ├── risk_managers.py      #   风控管理器
 │   │   └── portfolio.py          #   组合优化器
@@ -605,7 +605,7 @@ OhMyQuant/
 from ohmyquant.data.sources.duckdb_source import DuckDBSource
 from ohmyquant.data.base import DataCatalog
 
-source = DuckDBSource({"data_root": "D:/Work/Project/download_a_share/data"})
+source = DuckDBSource({"data_root": os.getenv("DATA_ROOT", "data")})
 catalog = DataCatalog(source)
 
 # 获取行情

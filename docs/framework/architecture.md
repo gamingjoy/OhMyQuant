@@ -109,17 +109,17 @@ strategy/strategies/
     │   ├── __init__.py
     │   ├── config.yaml
     │   └── strategy.py      ← @register_strategy("industry_rotation", "v4")
-    └── v5/
+    └── v66/
         ├── __init__.py
         ├── config.yaml
-        └── strategy.py      ← @register_strategy("industry_rotation", "v5")
+        └── strategy.py      ← @register_strategy("industry_rotation", "v66")
 ```
 
 [VersionManager](file:///d:/Work/Project/OhMyQuant/ohmyquant/strategy/version_manager.py) 支持迭代版本（如 v2.1）：
 ```
-strategies/industry_rotation/v5/
+strategies/industry_rotation/v66/
   ├── config.yaml
   └── strategy.py
 ```
 
-策略查找优先级：`PluginRegistry.get(STRATEGY, "industry_rotation_v5")` → `importlib.import_module`（兜底）。
+策略查找优先级：`PluginRegistry.get(STRATEGY, "industry_rotation_v66")` → `importlib.import_module`（兜底）。

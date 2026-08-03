@@ -177,7 +177,7 @@ T 日交易时段：
      → 无法获取盘中数据
 
 T 日收盘后：
-  2. 运行 omq run industry_rotation v5
+  2. 运行 omq run industry_rotation v66
      → 回测验证策略效果
      → 结果保存到 output/results.json
 
@@ -206,4 +206,4 @@ rebalance:
 | 策略 | frequency | method | cost_model | threshold |
 |------|-----------|--------|------------|-----------|
 | industry_rotation/v4 | weekly | cost_benefit | stock_cn | 默认 |
-| industry_rotation/v5 | weekly | cost_benefit | stock_cn | 默认 |
+| industry_rotation/v66 | weekly | cost_benefit | stock_cn | 默认 |
