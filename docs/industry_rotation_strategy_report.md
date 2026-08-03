@@ -322,19 +322,19 @@ output/ths/industry_rotation_v66/
 
 ```bash
 # T日早晨调仓检查 + 生成同花顺交易文件 (日常使用)
-python scripts/industry_rotation_daily.py
+python scripts/industry_rotation/industry_rotation_daily.py
 
 # 指定版本
-python scripts/industry_rotation_daily.py --version v66
+python scripts/industry_rotation/industry_rotation_daily.py --version v66
 
 # 批量重新生成全部 OOS THS 文件
-python scripts/regenerate_ths_files.py --version v66
+python scripts/common/regenerate_ths_files.py --version v66
 
 # 验证 THS 文件一致性
-python scripts/verify_ths_trades.py --version v66
+python scripts/common/verify_ths_trades.py --version v66
 
 # 基于已生成 THS 文件回放算净值
-python scripts/industry_rotation_nav_analysis.py --version v66
+python scripts/industry_rotation/industry_rotation_nav_analysis.py --version v66
 ```
 
 ### 7.3 日常调仓流程
@@ -362,33 +362,33 @@ pip install polars numpy scipy pyyaml duckdb openpyxl pandas
 
 ```bash
 # v66 IS 回测 (全 IS 期 2022-2025)
-python scripts/industry_rotation_is.py --version v66
+python scripts/industry_rotation/industry_rotation_is.py --version v66
 
 # v66 IS 回测 (指定年份)
-python scripts/industry_rotation_is.py --version v66 --year 2025
+python scripts/industry_rotation/industry_rotation_is.py --version v66 --year 2025
 
 # v66 IS 回测 (2018-2021 跨周期验证)
-python scripts/industry_rotation_is.py --version v66 --start 2018-01-01 --end 2021-12-31
+python scripts/industry_rotation/industry_rotation_is.py --version v66 --start 2018-01-01 --end 2021-12-31
 
 # 版本对比 (v53 vs v66)
-python scripts/industry_rotation_is.py --versions v53,v66
+python scripts/industry_rotation/industry_rotation_is.py --versions v53,v66
 ```
 
 ### 8.3 OOS 验证
 
 ```bash
 # v66 OOS 回测 (2026-06-01 起)
-python scripts/industry_rotation_oos.py --version v66
+python scripts/industry_rotation/industry_rotation_oos.py --version v66
 ```
 
 ### 8.4 建仓调仓文件生成
 
 ```bash
 # 日常调仓检查 + 生成 THS 文件
-python scripts/industry_rotation_daily.py --version v66
+python scripts/industry_rotation/industry_rotation_daily.py --version v66
 
 # 批量重新生成全部 OOS THS 文件
-python scripts/regenerate_ths_files.py --version v66
+python scripts/common/regenerate_ths_files.py --version v66
 ```
 
 ---
@@ -399,12 +399,12 @@ python scripts/regenerate_ths_files.py --version v66
 |------|------|
 | [config.yaml](file:///d:/Work/Project/OhMyQuant/ohmyquant/strategy/strategies/industry_rotation/v66/config.yaml) | 策略配置 (v66 final) |
 | [strategy.py](file:///d:/Work/Project/OhMyQuant/ohmyquant/strategy/strategies/industry_rotation/v66/strategy.py) | 策略主入口 |
-| [scripts/industry_rotation_daily.py](file:///d:/Work/Project/OhMyQuant/scripts/industry_rotation_daily.py) | T日早晨调仓检查 + THS 文件生成 |
-| [scripts/industry_rotation_is.py](file:///d:/Work/Project/OhMyQuant/scripts/industry_rotation_is.py) | IS 回测通用版 |
-| [scripts/industry_rotation_oos.py](file:///d:/Work/Project/OhMyQuant/scripts/industry_rotation_oos.py) | OOS 回测通用版 |
-| [scripts/industry_rotation_nav_analysis.py](file:///d:/Work/Project/OhMyQuant/scripts/industry_rotation_nav_analysis.py) | 基于 THS 文件回放算净值 |
-| [scripts/regenerate_ths_files.py](file:///d:/Work/Project/OhMyQuant/scripts/regenerate_ths_files.py) | 批量重新生成全部 OOS THS 文件 |
-| [scripts/verify_ths_trades.py](file:///d:/Work/Project/OhMyQuant/scripts/verify_ths_trades.py) | 验证 THS xlsx 一致性 |
+| [scripts/industry_rotation/industry_rotation_daily.py](file:///d:/Work/Project/OhMyQuant/scripts/industry_rotation/industry_rotation_daily.py) | T日早晨调仓检查 + THS 文件生成 |
+| [scripts/industry_rotation/industry_rotation_is.py](file:///d:/Work/Project/OhMyQuant/scripts/industry_rotation/industry_rotation_is.py) | IS 回测通用版 |
+| [scripts/industry_rotation/industry_rotation_oos.py](file:///d:/Work/Project/OhMyQuant/scripts/industry_rotation/industry_rotation_oos.py) | OOS 回测通用版 |
+| [scripts/industry_rotation/industry_rotation_nav_analysis.py](file:///d:/Work/Project/OhMyQuant/scripts/industry_rotation/industry_rotation_nav_analysis.py) | 基于 THS 文件回放算净值 |
+| [scripts/common/regenerate_ths_files.py](file:///d:/Work/Project/OhMyQuant/scripts/common/regenerate_ths_files.py) | 批量重新生成全部 OOS THS 文件 |
+| [scripts/common/verify_ths_trades.py](file:///d:/Work/Project/OhMyQuant/scripts/common/verify_ths_trades.py) | 验证 THS xlsx 一致性 |
 | [ohmyquant/execution/ths_utils.py](file:///d:/Work/Project/OhMyQuant/ohmyquant/execution/ths_utils.py) | 同花顺交易文件生成工具 (跨策略复用) |
 | [templates/ths_pms_template.xlsx](file:///d:/Work/Project/OhMyQuant/templates/ths_pms_template.xlsx) | 同花顺交易流水模板 |
 | [output/is_compare/industry_rotation/v66_hk_hold_ra.json](file:///d:/Work/Project/OhMyQuant/output/is_compare/industry_rotation/v66_hk_hold_ra.json) | v66 IS 验证结果 (含年度分解) |
@@ -470,19 +470,19 @@ v66 已是 final, 若未来探索:
 
 ```bash
 # v66 IS 验证 (全 IS 期)
-python scripts/industry_rotation_is.py --version v66
+python scripts/industry_rotation/industry_rotation_is.py --version v66
 
 # v66 OOS 验证
-python scripts/industry_rotation_oos.py --version v66
+python scripts/industry_rotation/industry_rotation_oos.py --version v66
 
 # 日常调仓 + THS 文件生成
-python scripts/industry_rotation_daily.py --version v66
+python scripts/industry_rotation/industry_rotation_daily.py --version v66
 
 # 批量重新生成全部 OOS THS 文件
-python scripts/regenerate_ths_files.py --version v66
+python scripts/common/regenerate_ths_files.py --version v66
 
 # 净值分析
-python scripts/industry_rotation_nav_analysis.py --version v66
+python scripts/industry_rotation/industry_rotation_nav_analysis.py --version v66
 ```
 
 ---

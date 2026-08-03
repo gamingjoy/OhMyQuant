@@ -14,8 +14,9 @@ import logging
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+# 跨目录引用 industry_rotation 脚本(策略专属逻辑)
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "industry_rotation"))
 
 # THS 通用工具从框架层引用
 from ohmyquant.execution.ths_utils import (

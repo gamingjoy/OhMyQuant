@@ -496,18 +496,18 @@ python -m pytest tests/ --cov=ohmyquant --cov-report=html
 
 ```bash
 # 数据增量更新（当年 + 前一年）
-python scripts/update_data.py
+python scripts/common/update_data.py
 
 # 行业轮动 T 日早晨调仓检查 + 生成同花顺交易文件
-python scripts/industry_rotation_daily.py
+python scripts/industry_rotation/industry_rotation_daily.py
 
 # 行业轮动 IS/OOS 回测
-python scripts/industry_rotation_is.py --version v66
-python scripts/industry_rotation_oos.py --version v66
+python scripts/industry_rotation/industry_rotation_is.py --version v66
+python scripts/industry_rotation/industry_rotation_oos.py --version v66
 
 # expertForest_v1 IS/OOS 验证
-python scripts/expertforest_v1_is_explore.py --pool 000300 --top_n 30
-python scripts/expertforest_v1_oos_validate.py
+python scripts/expertforest_v1/expertforest_v1_is_explore.py --pool 000300 --top_n 30
+python scripts/expertforest_v1/expertforest_v1_oos_validate.py
 
 # 详细脚本说明见 scripts/README.md
 ```
