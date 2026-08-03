@@ -52,9 +52,9 @@ OhMyQuant 是一个模块化、可扩展的量化策略开发框架，支持 A�
 ├─────────────────────────────────────────────────────────────────┤
 │                     Strategy Layer                              │
 │  Registry · Runner · VersionManager                            │
-│  ┌──────────────────────┐ ┌──────────────────────┐            │
-│  │ industry_rotation v4 │ │ industry_rotation v5 │            │
-│  └──────────────────────┘ └──────────────────────┘            │
+│  ┌────────────────────────┐ ┌──────────────────────┐          │
+│  │ industry_rotation v66  │ │ expertForest_v1      │          │
+│  └────────────────────────┘ └──────────────────────┘          │
 ├─────────────────────────────────────────────────────────────────┤
 │                    Backtest Engine                              │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐          │
@@ -165,7 +165,8 @@ python -m ohmyquant.cli list factors
 
 | 策略 | 版本 | 选股方法 | 适用场景 |
 |------|------|----------|----------|
-| `industry_rotation` | v5 | 行业轮动+多因子 | 60+120日动量+10因子评分+大盘过滤 |
+| `industry_rotation` | v66 | 行业轮动+多因子 | 60+120日动量+10因子评分+大盘过滤+港股持仓+正交化 |
+| `expertForest` | v1 | 多专家集成 | 32个专家(momentum/fundamental/wavelet/volatility)投票集成,沪深300股票池 |
 
 ### 创建新策略
 
@@ -494,14 +495,21 @@ python -m pytest tests/ --cov=ohmyquant --cov-report=html
 ### 批量分析与验证
 
 ```bash
-# 全策略对比（8 个策略一次性回测并输出对比表）
-python scripts/compare_all.py
-
-# 快速 Walk-Forward 跨周期验证（从已保存结果切分年度窗口）
-python scripts/walk_forward_fast.py
-
 # 数据增量更新（当年 + 前一年）
 python scripts/update_data.py
+
+# 行业轮动 T 日早晨调仓检查 + 生成同花顺交易文件
+python scripts/industry_rotation_daily.py
+
+# 行业轮动 IS/OOS 回测
+python scripts/industry_rotation_is.py --version v66
+python scripts/industry_rotation_oos.py --version v66
+
+# expertForest_v1 IS/OOS 验证
+python scripts/expertforest_v1_is_explore.py --pool 000300 --top_n 30
+python scripts/expertforest_v1_oos_validate.py
+
+# 详细脚本说明见 scripts/README.md
 ```
 
 ---
@@ -538,11 +546,12 @@ OhMyQuant/
 │   │   ├── base.py               #   BaseStrategy
 │   │   ├── registry.py           #   StrategyRegistry
 │   │   ├── runner.py             #   StrategyRunner
-│   │   └── strategies/           #   2 个策略版本（v4, v5）
+│   │   └── strategies/           # 2 个策略(industry_rotation v66, expertForest v1)
 │   ├── execution/                # 执行系统
 │   │   ├── cost_model.py         #   交易成本模型
 │   │   ├── rebalancer.py         #   调仓器
-│   │   └── scheduler.py          #   调仓调度器
+│   │   ├── scheduler.py          #   调仓调度器
+│   │   └── ths_utils.py          #   同花顺交易文件生成工具(跨策略复用)
 │   ├── optimization/             # 策略优化
 │   │   ├── walk_forward.py       #   Walk-Forward 验证
 │   │   ├── param_search.py       #   参数搜索
@@ -632,4 +641,3 @@ A: 实现 `DataSource` ABC 的所有抽象方法，用 `@register_data_source("m
 ## License
 
 MIT
->>>>>>> master

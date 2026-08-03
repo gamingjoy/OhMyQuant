@@ -20,7 +20,8 @@ CLI (cli/)
         │     ├── CostModel (cost_model.py)       ← stock_cn/etf_cn/mixed_cn
         │     ├── Rebalancer (rebalancer.py)      ← cost_benefit/simple/none
         │     ├── Scheduler (scheduler.py)        ← calendar/adaptive
-        │     └── Executor (executor.py)          ← simulated/live
+        │     ├── Executor (executor.py)          ← simulated/live
+        │     └── ths_utils.py                    ← 同花顺交易文件生成(跨策略复用)
         ├── Optimization (optimization/)          ← 策略优化
         │     ├── StrategyWalkForward (walk_forward.py)
         │     ├── ParamSearcher (param_search.py) ← Optuna/网格搜索
